@@ -1,0 +1,35 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :focus-visible {
+    outline: 2px solid theme("colors.ochre.DEFAULT");
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer components {
+  .eyebrow {
+    @apply font-mono text-[11px] uppercase tracking-[0.16em] text-acacia/70;
+  }
+
+  .badge-pulse {
+    @apply relative inline-flex h-2 w-2 rounded-full bg-pulse;
+  }
+
+  .badge-pulse::before {
+    content: "";
+    @apply absolute inset-0 rounded-full bg-pulse animate-pulse-ring;
+  }
+}

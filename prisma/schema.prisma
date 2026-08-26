@@ -1,0 +1,479 @@
+// Rongai Homes — Phase 1 database schema
+// Provider is Postgres via DATABASE_URL (works with Supabase, Neon, Docker, etc.)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- ENUMS ----------
+
+enum UserRole {
+  TENANT
+  LANDLORD
+  AGENT
+  CARETAKER
+  ADMIN
+}
+
+enum PropertyIntent {
+  RENT_HOME
+  BUY_HOME
+  BUY_LAND
+  RENT_COMMERCIAL
+  BUY_COMMERCIAL
+}
+
+enum PropertyType {
+  BEDSITTER
+  STUDIO
+  ONE_BEDROOM
+  TWO_BEDROOM
+  THREE_BEDROOM
+  FOUR_PLUS_BEDROOM
+  MAISONETTE
+  TOWNHOUSE
+  APARTMENT
+  STANDALONE_HOUSE
+  LAND
+  SHOP
+  OFFICE
+  WAREHOUSE
+  STALL
+  COMMERCIAL_PLOT
+}
+
+enum AvailabilityStatus {
+  AVAILABLE_NOW
+  AVAILABLE_SOON
+  OCCUPIED
+  NOT_CONFIRMED
+  TEMPORARILY_UNAVAILABLE
+  PAUSED
+}
+
+enum VerificationLevel {
+  BASIC
+  VERIFIED
+  TRUSTED
+}
+
+enum ViewingStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  RESCHEDULE_REQUESTED
+  COMPLETED
+  CANCELLED
+}
+
+enum ReportReason {
+  FAKE_PROPERTY
+  WRONG_PRICE
+  ALREADY_OCCUPIED
+  WRONG_LOCATION
+  FAKE_PHOTOS
+  SUSPICIOUS_LANDLORD
+  ASKED_FOR_MONEY_BEFORE_VIEWING
+  DUPLICATE_LISTING
+  OTHER
+}
+
+enum ReportStatus {
+  OPEN
+  UNDER_REVIEW
+  RESOLVED
+  DISMISSED
+}
+
+enum ListingStatus {
+  DRAFT
+  PENDING_APPROVAL
+  ACTIVE
+  REJECTED
+  SUSPENDED
+}
+
+// ---------- CORE USERS ----------
+
+model User {
+  id            String    @id @default(uuid())
+  name          String?
+  email         String?   @unique
+  phone         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  role          UserRole  @default(TENANT)
+  isGuest       Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts Account[]
+  sessions Session[]
+
+  profile        UserProfile?
+  landlordOf     Property[]        @relation("PropertyLandlord")
+  agentProfile   AgentProfile?
+  caretakerOf    Property[]        @relation("PropertyCaretaker")
+  savedProperties SavedProperty[]
+  searchAlerts   SearchAlert[]
+  viewingRequests ViewingRequest[]
+  notifications  Notification[]
+  reportsFiled   Report[]          @relation("ReportedBy")
+  reviewsWritten Review[]
+  auditLogs      AuditLog[]
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(uuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(uuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+model UserProfile {
+  id               String    @id @default(uuid())
+  userId           String    @unique
+  preferredArea    String?
+  budgetMin         Int?
+  budgetMax         Int?
+  preferredType     PropertyType?
+  bedrooms          Int?
+  moveInDate        DateTime?
+  notifyByEmail     Boolean   @default(true)
+  notifyInApp       Boolean   @default(true)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_profiles")
+}
+
+model AgentProfile {
+  id            String   @id @default(uuid())
+  userId        String   @unique
+  agencyName    String?
+  bio           String?
+  subscriptionTier String @default("FREE")
+  createdAt     DateTime @default(now())
+
+  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  properties Property[]   @relation("PropertyAgent")
+
+  @@map("agent_profiles")
+}
+
+// ---------- LOCATIONS ----------
+
+model Neighbourhood {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  townSlug  String   @default("ongata-rongai")
+  latitude  Float?
+  longitude Float?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  properties Property[]
+  buildings  Building[]
+
+  @@map("neighbourhoods")
+}
+
+// ---------- PROPERTIES ----------
+
+model Building {
+  id              String   @id @default(uuid())
+  name            String
+  neighbourhoodId String
+  address         String?
+  latitude        Float?
+  longitude       Float?
+  landlordId      String
+  createdAt       DateTime @default(now())
+
+  neighbourhood Neighbourhood @relation(fields: [neighbourhoodId], references: [id])
+  units         Property[]
+
+  @@map("buildings")
+}
+
+model Property {
+  id             String         @id @default(uuid())
+  title          String
+  description    String?        @db.Text
+  intent         PropertyIntent
+  propertyType   PropertyType
+  rentAmount     Int?
+  saleAmount     Int?
+  depositAmount  Int?
+  bedrooms       Int?
+  bathrooms      Int?
+
+  neighbourhoodId String
+  buildingId       String?
+  unitLabel        String? // e.g. "A02" when part of a building
+  latitude         Float?
+  longitude        Float?
+  approximateOnly  Boolean  @default(false)
+
+  landlordId  String?
+  caretakerId String?
+  agentId     String?
+
+  listingStatus  ListingStatus       @default(PENDING_APPROVAL)
+  availability   AvailabilityStatus  @default(NOT_CONFIRMED)
+  lastVerifiedAt DateTime?
+  verification   VerificationLevel   @default(BASIC)
+
+  // land / commercial specific fields (nullable, only used per property type)
+  acreage           Float?
+  titleDeedStatus   String?
+  roadAccess        String?
+  zoning            String?
+
+  isFeatured Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  neighbourhood Neighbourhood @relation(fields: [neighbourhoodId], references: [id])
+  building      Building?     @relation(fields: [buildingId], references: [id])
+  landlord      User?         @relation("PropertyLandlord", fields: [landlordId], references: [id])
+  caretaker     User?         @relation("PropertyCaretaker", fields: [caretakerId], references: [id])
+  agent         AgentProfile? @relation("PropertyAgent", fields: [agentId], references: [id])
+
+  images             PropertyImage[]
+  amenities          PropertyAmenity[]
+  availabilityRecords AvailabilityRecord[]
+  verificationRecords VerificationRecord[]
+  viewingRequests     ViewingRequest[]
+  savedBy             SavedProperty[]
+  reports             Report[]
+  reviews             Review[]
+  featuredListings    FeaturedListing[]
+
+  @@index([neighbourhoodId])
+  @@index([availability])
+  @@index([propertyType])
+  @@map("properties")
+}
+
+model PropertyImage {
+  id         String   @id @default(uuid())
+  propertyId String
+  url        String
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@map("property_images")
+}
+
+model Amenity {
+  id   String @id @default(uuid())
+  key  String @unique // e.g. "parking", "borehole", "cctv"
+  label String
+
+  properties PropertyAmenity[]
+
+  @@map("amenities")
+}
+
+model PropertyAmenity {
+  propertyId String
+  amenityId  String
+
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  amenity  Amenity  @relation(fields: [amenityId], references: [id], onDelete: Cascade)
+
+  @@id([propertyId, amenityId])
+  @@map("property_amenities")
+}
+
+// ---------- AVAILABILITY & VERIFICATION ----------
+
+model AvailabilityRecord {
+  id         String             @id @default(uuid())
+  propertyId String
+  status     AvailabilityStatus
+  confirmedBy String? // userId of landlord/caretaker who confirmed
+  createdAt  DateTime           @default(now())
+
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@map("availability_records")
+}
+
+model VerificationRecord {
+  id         String            @id @default(uuid())
+  propertyId String
+  level      VerificationLevel
+  notes      String?
+  verifiedBy String? // admin userId
+  createdAt  DateTime          @default(now())
+
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@map("verification_records")
+}
+
+// ---------- TENANT INTERACTIONS ----------
+
+model ViewingRequest {
+  id            String        @id @default(uuid())
+  propertyId    String
+  tenantId      String
+  preferredDate DateTime
+  message       String?
+  status        ViewingStatus @default(PENDING)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  tenant   User     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("viewing_requests")
+}
+
+model SavedProperty {
+  id         String   @id @default(uuid())
+  userId     String
+  propertyId String
+  createdAt  DateTime @default(now())
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, propertyId])
+  @@map("saved_properties")
+}
+
+model SearchAlert {
+  id              String   @id @default(uuid())
+  userId          String
+  neighbourhoodId String?
+  propertyType    PropertyType?
+  budgetMin       Int?
+  budgetMax       Int?
+  bedrooms        Int?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("search_alerts")
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  title     String
+  body      String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+// ---------- TRUST & SAFETY ----------
+
+model Report {
+  id          String       @id @default(uuid())
+  propertyId  String
+  reportedById String
+  reason      ReportReason
+  details     String?
+  status      ReportStatus @default(OPEN)
+  createdAt   DateTime     @default(now())
+
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  reportedBy User     @relation("ReportedBy", fields: [reportedById], references: [id])
+
+  @@map("reports")
+}
+
+model Review {
+  id          String   @id @default(uuid())
+  propertyId  String
+  authorId    String
+  accuracy    Int // 1-5
+  responsiveness Int // 1-5
+  condition   Int // 1-5
+  viewingExperience Int // 1-5
+  comment     String?
+  isModerated Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  author   User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@map("reviews")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  action    String
+  entity    String
+  entityId  String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@map("audit_logs")
+}
+
+// ---------- MONETIZATION (scaffolded for Phase 7) ----------
+
+model FeaturedListing {
+  id         String   @id @default(uuid())
+  propertyId String
+  startsAt   DateTime
+  endsAt     DateTime
+  createdAt  DateTime @default(now())
+
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@map("featured_listings")
+}
