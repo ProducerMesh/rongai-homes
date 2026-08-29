@@ -1,16 +1,17 @@
 import Link from "next/link";
+import { prisma } from "@/lib/prisma";
 
 // Phase 1 ships with representative content so the page renders before the
 // database is seeded/connected. Swap these for `prisma.neighbourhood.findMany()`
 // and a real "available now" query once Phase 3 (real-time vacancy) lands.
 const NEIGHBOURHOODS = [
-  { name: "Rongai Town", count: 41 },
-  { name: "Kandisi", count: 27 },
-  { name: "Rimpa", count: 19 },
-  { name: "Nkoroi", count: 15 },
-  { name: "Tuala", count: 12 },
-  { name: "Gataka", count: 9 },
-  { name: "Maasai Lodge", count: 6 },
+  "Rongai Town",
+  "Kandisi",
+  "Rimpa",
+  "Nkoroi",
+  "Tuala",
+  "Gataka",
+  "Maasai Lodge",
 ];
 
 const INTENTS = [
@@ -55,7 +56,33 @@ function formatKsh(amount: number) {
   return `KSh ${amount.toLocaleString("en-KE")}`;
 }
 
-export default function HomePage() {
+export default async function HomePage() {
+const availableCount = await prisma.property.count({
+  where: {
+    listingStatus: "ACTIVE",
+    availability: "AVAILABLE_NOW",
+  },
+});
+const neighbourhoods = await Promise.all(
+  NEIGHBOURHOODS.map(async (name) => {
+    const neighbourhood = await prisma.neighbourhood.findUnique({
+      where: { name },
+    });
+
+    const count = neighbourhood
+      ? await prisma.property.count({
+          where: {
+            neighbourhoodId: neighbourhood.id,
+            listingStatus: "ACTIVE",
+            availability: "AVAILABLE_NOW",
+          },
+        })
+      : 0;
+
+    return { name, count };
+  })
+);
+
   return (
     <main>
       {/* ---------- HERO ---------- */}
@@ -86,7 +113,7 @@ export default function HomePage() {
           <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-parchment/25 px-3 py-1">
             <span className="badge-pulse" />
             <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-parchment/80">
-              129 plots verified available right now
+             {availableCount} properties verified available right now
             </span>
           </div>
 
@@ -102,18 +129,19 @@ export default function HomePage() {
           <div className="mt-10 rounded-2xl bg-parchment p-2 text-ink shadow-xl sm:p-3">
             <div className="flex flex-wrap gap-2 border-b border-line px-2 pb-2 sm:px-3">
               {INTENTS.map((intent, i) => (
-                <button
-                  key={intent.key}
-                  className={`rounded-full px-4 py-1.5 text-sm font-medium transition ${
-                    i === 0
-                      ? "bg-acacia text-parchment"
-                      : "text-acacia/70 hover:bg-acacia/10"
-                  }`}
-                >
-                  {intent.label}
-                </button>
-              ))}
-            </div>
+  <Link
+    key={intent.key}
+    href={`/search?intent=${intent.key}`}
+    className={`rounded-full px-4 py-1.5 text-sm font-medium transition ${
+      i === 0
+        ? "bg-acacia text-parchment"
+        : "text-acacia/70 hover:bg-acacia/10"
+    }`}
+  >
+    {intent.label}
+  </Link>
+))}
+</div>
             <form className="flex flex-col gap-2 p-2 sm:flex-row sm:p-3">
               <input
                 type="text"
@@ -138,7 +166,7 @@ export default function HomePage() {
           Browse Ongata Rongai by neighbourhood
         </h2>
         <div className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-          {NEIGHBOURHOODS.map((n) => (
+          {neighbourhoods.map((n) => (
             <Link
               key={n.name}
               href={`/search?area=${encodeURIComponent(n.name)}`}
