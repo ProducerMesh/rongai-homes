@@ -232,6 +232,21 @@ export default function DashboardPage() {
                   </div>
                 </div>
               </div>
+                <div className="mt-6 flex flex-col gap-3 border-t border-line pt-5 sm:flex-row">
+                  <Link
+                    href={`/property/${property.id}`}
+                    className="flex-1 rounded-xl border border-line px-4 py-3 text-center text-sm font-semibold text-acacia transition hover:border-acacia/40 hover:bg-parchment"
+                  >
+                    View listing
+                  </Link>
+
+                  <Link
+                    href={`/dashboard/listings/${property.id}`}
+                    className="flex-1 rounded-xl bg-ochre px-4 py-3 text-center text-sm font-semibold text-acacia-dark transition hover:bg-ochre-dark"
+                  >
+                    Manage listing
+                  </Link>
+                </div>
             </article>
           ))}
         </div>
