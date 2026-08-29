@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
 import { Fraunces, Inter, IBM_Plex_Mono } from "next/font/google";
+
+import Providers from "@/components/providers";
+import Header from "@/components/header";
 import "./globals.css";
 
 const fraunces = Fraunces({
@@ -27,13 +30,20 @@ export const metadata: Metadata = {
     "Discover verified, currently-vacant houses, apartments, land and commercial spaces in Ongata Rongai.",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html lang="en">
       <body
         className={`${fraunces.variable} ${inter.variable} ${plexMono.variable} font-body bg-parchment text-ink antialiased`}
       >
-        {children}
+        <Providers>
+  <Header />
+  {children}
+</Providers>
       </body>
     </html>
   );
