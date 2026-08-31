@@ -7,7 +7,7 @@ export default function Header() {
   const { data: session, status } = useSession();
 
   return (
-    <header className="border-b border-line bg-parchment">
+    <header className="sticky top-0 z-50 border-b border-line bg-parchment/95 shadow-sm backdrop-blur">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
         <Link
           href="/"
@@ -19,14 +19,14 @@ export default function Header() {
         <nav className="hidden items-center gap-6 sm:flex">
           <Link
             href="/search"
-            className="text-sm font-medium text-ink/70 hover:text-acacia"
+            className="text-sm font-medium text-ink/70 transition hover:text-acacia"
           >
             Find a Home
           </Link>
 
           <Link
             href="/list-property"
-            className="text-sm font-medium text-ink/70 hover:text-acacia"
+            className="text-sm font-medium text-ink/70 transition hover:text-acacia"
           >
             List Property
           </Link>
@@ -40,7 +40,7 @@ export default function Header() {
                   <img
                     src={session.user.image}
                     alt={session.user.name ?? "Profile"}
-                    className="h-8 w-8 rounded-full"
+                    className="h-8 w-8 rounded-full object-cover"
                   />
                 ) : (
                   <div className="flex h-8 w-8 items-center justify-center rounded-full bg-acacia text-xs font-semibold text-parchment">
@@ -56,7 +56,7 @@ export default function Header() {
               <button
                 type="button"
                 onClick={() => signOut({ callbackUrl: "/" })}
-                className="rounded-lg border border-line px-3 py-2 text-xs font-medium text-ink/60 hover:border-acacia hover:text-acacia"
+                className="rounded-lg border border-line px-3 py-2 text-xs font-medium text-ink/60 transition hover:border-acacia hover:text-acacia"
               >
                 Sign out
               </button>
@@ -65,7 +65,7 @@ export default function Header() {
             <button
               type="button"
               onClick={() => signIn("google", { callbackUrl: "/" })}
-              className="rounded-xl bg-ochre px-4 py-2 text-sm font-semibold text-acacia-dark hover:bg-ochre-dark"
+              className="rounded-xl bg-ochre px-4 py-2 text-sm font-semibold text-acacia-dark transition hover:bg-ochre-dark"
             >
               Sign in
             </button>
