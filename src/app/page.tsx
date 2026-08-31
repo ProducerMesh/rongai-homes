@@ -142,19 +142,27 @@ const neighbourhoods = await Promise.all(
   </Link>
 ))}
 </div>
-            <form className="flex flex-col gap-2 p-2 sm:flex-row sm:p-3">
-              <input
-                type="text"
-                placeholder="Where do you want to live? e.g. Kandisi"
-                className="w-full flex-1 rounded-xl border border-line bg-white px-4 py-3 text-sm outline-none placeholder:text-ink/40"
-              />
-              <button
-                type="submit"
-                className="rounded-xl bg-ochre px-6 py-3 text-sm font-semibold text-acacia-dark transition hover:bg-ochre-dark"
-              >
-                Search
-              </button>
-            </form>
+            <form
+  method="GET"
+  action="/search"
+  className="flex flex-col gap-2 p-2 sm:flex-row sm:p-3"
+>
+  <input
+    type="text"
+    name="q"
+    placeholder="Where do you want to live? e.g. Kandisi"
+    className="w-full flex-1 rounded-xl border border-line bg-white px-4 py-3 text-sm outline-none placeholder:text-ink/40"
+  />
+
+  <input type="hidden" name="intent" value="rent" />
+
+  <button
+    type="submit"
+    className="rounded-xl bg-ochre px-6 py-3 text-sm font-semibold text-acacia-dark transition hover:bg-ochre-dark"
+  >
+    Search
+  </button>
+</form>
           </div>
         </div>
       </section>
