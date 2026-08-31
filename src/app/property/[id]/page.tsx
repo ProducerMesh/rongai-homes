@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import PropertyGallery from "./PropertyGallery";
 
 function formatKsh(amount: number | null) {
   if (amount === null) return "Price on request";
@@ -52,19 +53,10 @@ export default async function PropertyPage({
       <section className="mx-auto max-w-6xl px-6 py-10">
         <div className="grid gap-8 lg:grid-cols-3">
           <div className="lg:col-span-2">
-            <div className="flex min-h-[320px] items-center justify-center rounded-2xl border border-line bg-white">
-              {property.images.length > 0 ? (
-                <img
-                  src={property.images[0].url}
-                  alt={property.title}
-                  className="h-full max-h-[500px] w-full rounded-2xl object-cover"
-                />
-              ) : (
-                <span className="text-sm text-ink/40">
-                  No photo available yet
-                </span>
-              )}
-            </div>
+<PropertyGallery
+  title={property.title}
+  images={property.images}
+/>
 
             <div className="mt-8">
               <div className="flex flex-wrap items-center gap-2">

@@ -25,7 +25,9 @@ type Property = {
     name: string;
   };
   images: {
+    id: string;
     url: string;
+    sortOrder?: number;
   }[];
 };
 
@@ -55,6 +57,8 @@ export default function ManageListingPage() {
   const [selectedImages, setSelectedImages] = useState<File[]>([]);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const [uploadingImages, setUploadingImages] = useState(false);
+  const [deletingImageId, setDeletingImageId] =
+    useState<string | null>(null);
 
   const [form, setForm] = useState({
     title: "",
@@ -77,7 +81,9 @@ export default function ManageListingPage() {
         const data = await response.json();
 
         if (!response.ok) {
-          setError(data.error || "Unable to load this listing.");
+          setError(
+            data.error || "Unable to load this listing."
+          );
           return;
         }
 
@@ -86,10 +92,14 @@ export default function ManageListingPage() {
         setForm({
           title: data.property.title || "",
           description: data.property.description || "",
-          bedrooms: data.property.bedrooms?.toString() || "",
-          bathrooms: data.property.bathrooms?.toString() || "",
-          rentAmount: data.property.rentAmount?.toString() || "",
-          saleAmount: data.property.saleAmount?.toString() || "",
+          bedrooms:
+            data.property.bedrooms?.toString() || "",
+          bathrooms:
+            data.property.bathrooms?.toString() || "",
+          rentAmount:
+            data.property.rentAmount?.toString() || "",
+          saleAmount:
+            data.property.saleAmount?.toString() || "",
           depositAmount:
             data.property.depositAmount?.toString() || "",
         });
@@ -130,13 +140,17 @@ export default function ManageListingPage() {
     setError("");
     setSaveMessage("");
 
-    const existingImageCount = property?.images?.length || 0;
+    const existingImageCount =
+      property?.images?.length || 0;
 
     if (files.length === 0) {
       return;
     }
 
-    if (existingImageCount + files.length > MAX_IMAGES) {
+    if (
+      existingImageCount + files.length >
+      MAX_IMAGES
+    ) {
       setError(
         `This listing can have a maximum of ${MAX_IMAGES} images.`
       );
@@ -190,16 +204,22 @@ export default function ManageListingPage() {
     try {
       const imageFormData = new FormData();
 
-      imageFormData.append("propertyId", property.id);
+      imageFormData.append(
+        "propertyId",
+        property.id
+      );
 
       selectedImages.forEach((file) => {
         imageFormData.append("files", file);
       });
 
-      const response = await fetch("/api/property-images", {
-        method: "POST",
-        body: imageFormData,
-      });
+      const response = await fetch(
+        "/api/property-images",
+        {
+          method: "POST",
+          body: imageFormData,
+        }
+      );
 
       const data = await response.json();
 
@@ -215,7 +235,8 @@ export default function ManageListingPage() {
         `/api/my-listings/${id}`
       );
 
-      const refreshedData = await refreshedResponse.json();
+      const refreshedData =
+        await refreshedResponse.json();
 
       if (refreshedResponse.ok) {
         setProperty(refreshedData.property);
@@ -235,38 +256,28 @@ export default function ManageListingPage() {
     }
   }
 
-  async function saveChanges() {
-    setSaving(true);
-    setSaveMessage("");
+  async function deleteImage(imageId: string) {
+    if (!property) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Are you sure you want to delete this property photo?"
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingImageId(imageId);
     setError("");
+    setSaveMessage("");
 
     try {
       const response = await fetch(
-        `/api/my-listings/${id}`,
+        `/api/property-images/${imageId}`,
         {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            title: form.title,
-            description: form.description,
-            bedrooms: form.bedrooms
-              ? Number(form.bedrooms)
-              : null,
-            bathrooms: form.bathrooms
-              ? Number(form.bathrooms)
-              : null,
-            rentAmount: form.rentAmount
-              ? Number(form.rentAmount)
-              : null,
-            saleAmount: form.saleAmount
-              ? Number(form.saleAmount)
-              : null,
-            depositAmount: form.depositAmount
-              ? Number(form.depositAmount)
-              : null,
-          }),
+          method: "DELETE",
         }
       );
 
@@ -274,7 +285,62 @@ export default function ManageListingPage() {
 
       if (!response.ok) {
         setError(
-          data.error || "Unable to save changes."
+          data.error ||
+            "Unable to delete the property image."
+        );
+        return;
+      }
+
+      const refreshedResponse = await fetch(
+        `/api/my-listings/${id}`
+      );
+
+      const refreshedData =
+        await refreshedResponse.json();
+
+      if (refreshedResponse.ok) {
+        setProperty(refreshedData.property);
+      }
+
+      setSaveMessage(
+        "Property photo deleted successfully."
+      );
+    } catch {
+      setError(
+        "Unable to delete the property photo. Please try again."
+      );
+    } finally {
+      setDeletingImageId(null);
+    }
+  }
+
+  async function saveChanges() {
+    if (!property) {
+      return;
+    }
+
+    setSaving(true);
+    setError("");
+    setSaveMessage("");
+
+    try {
+      const response = await fetch(
+        `/api/my-listings/${property.id}`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(form),
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setError(
+          data.error ||
+            "Unable to update this listing."
         );
         return;
       }
@@ -283,23 +349,29 @@ export default function ManageListingPage() {
       setEditing(false);
 
       setSaveMessage(
-        "Listing updated successfully."
+        "Property details saved successfully."
       );
     } catch {
-      setError("Unable to save changes.");
+      setError(
+        "Unable to save your changes. Please try again."
+      );
     } finally {
       setSaving(false);
     }
   }
 
   async function confirmAvailability() {
+    if (!property) {
+      return;
+    }
+
     setConfirmingAvailability(true);
-    setSaveMessage("");
     setError("");
+    setSaveMessage("");
 
     try {
       const response = await fetch(
-        `/api/my-listings/${id}`,
+        `/api/my-listings/${property.id}`,
         {
           method: "POST",
         }
@@ -318,10 +390,12 @@ export default function ManageListingPage() {
       setProperty(data.property);
 
       setSaveMessage(
-        "Availability confirmed. Your listing is now marked available."
+        "Availability confirmed successfully."
       );
     } catch {
-      setError("Unable to confirm availability.");
+      setError(
+        "Unable to confirm availability. Please try again."
+      );
     } finally {
       setConfirmingAvailability(false);
     }
@@ -332,55 +406,44 @@ export default function ManageListingPage() {
       return "Not yet confirmed";
     }
 
-    return new Date(date).toLocaleString("en-KE", {
-      dateStyle: "medium",
-      timeStyle: "short",
-    });
+    return new Date(date).toLocaleDateString(
+      "en-KE",
+      {
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      }
+    );
   }
 
   if (status === "loading" || loading) {
     return (
       <main className="min-h-screen bg-parchment">
-        <div className="mx-auto max-w-5xl px-6 py-20 text-center">
+        <section className="mx-auto max-w-6xl px-6 py-16">
           <p className="text-sm text-ink/50">
-            Loading your listing...
+            Loading listing...
           </p>
-        </div>
+        </section>
       </main>
     );
   }
 
-  if (!session?.user) {
+  if (status !== "authenticated") {
     return (
       <main className="min-h-screen bg-parchment">
-        <section className="bg-acacia py-12 text-parchment">
-          <div className="mx-auto max-w-5xl px-6">
-            <Link
-              href="/"
-              className="text-sm text-parchment/70 hover:text-parchment"
-            >
-              ← Rongai Homes
-            </Link>
-
-            <h1 className="mt-6 font-display text-4xl italic">
-              Manage listing
-            </h1>
-          </div>
-        </section>
-
-        <section className="mx-auto max-w-md px-6 py-16 text-center">
+        <section className="mx-auto max-w-6xl px-6 py-16">
           <div className="rounded-2xl border border-line bg-white p-8 shadow-sm">
-            <h2 className="font-display text-2xl text-acacia">
-              Sign in to continue
-            </h2>
+            <h1 className="font-display text-3xl text-acacia">
+              Sign in required
+            </h1>
 
-            <p className="mt-3 text-sm leading-6 text-ink/60">
-              Sign in to manage your property listing.
+            <p className="mt-3 text-sm text-ink/60">
+              Please sign in to manage your property listing.
             </p>
 
             <Link
-              href={`/auth/sign-in?callbackUrl=/dashboard/listings/${id}`}
-              className="mt-6 block rounded-xl bg-ochre px-6 py-3 text-sm font-semibold text-acacia-dark hover:bg-ochre-dark"
+              href="/auth/sign-in"
+              className="mt-6 inline-block rounded-xl bg-ochre px-5 py-3 text-sm font-semibold text-acacia-dark"
             >
               Sign in
             </Link>
@@ -390,29 +453,26 @@ export default function ManageListingPage() {
     );
   }
 
-  if (error || !property) {
+  if (!property) {
     return (
       <main className="min-h-screen bg-parchment">
-        <section className="bg-acacia py-12 text-parchment">
-          <div className="mx-auto max-w-5xl px-6">
+        <section className="mx-auto max-w-6xl px-6 py-16">
+          <div className="rounded-2xl border border-line bg-white p-8 shadow-sm">
+            <h1 className="font-display text-3xl text-acacia">
+              Listing unavailable
+            </h1>
+
+            <p className="mt-3 text-sm text-ink/60">
+              {error ||
+                "We could not find this listing."}
+            </p>
+
             <Link
               href="/dashboard"
-              className="text-sm text-parchment/70 hover:text-parchment"
+              className="mt-6 inline-block rounded-xl bg-ochre px-5 py-3 text-sm font-semibold text-acacia-dark"
             >
-              ← Back to dashboard
+              Back to dashboard
             </Link>
-
-            <h1 className="mt-6 font-display text-4xl italic">
-              Manage listing
-            </h1>
-          </div>
-        </section>
-
-        <section className="mx-auto max-w-5xl px-6 py-10">
-          <div className="rounded-2xl border border-red-200 bg-red-50 p-6">
-            <p className="text-sm font-medium text-red-700">
-              {error || "Listing not found."}
-            </p>
           </div>
         </section>
       </main>
@@ -421,63 +481,55 @@ export default function ManageListingPage() {
 
   return (
     <main className="min-h-screen bg-parchment">
-      <section className="bg-acacia py-10 text-parchment">
-        <div className="mx-auto max-w-5xl px-6">
+      <section className="mx-auto max-w-6xl px-6 py-10">
+        <div className="mb-8">
           <Link
             href="/dashboard"
-            className="text-sm text-parchment/70 hover:text-parchment"
+            className="text-sm font-medium text-acacia hover:underline"
           >
             ← Back to dashboard
           </Link>
 
-          <div className="mt-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <p className="eyebrow text-ochre">
-                Manage listing
-              </p>
+          <div className="mt-6">
+            <p className="eyebrow">
+              Manage listing
+            </p>
 
-              <h1 className="mt-2 font-display text-4xl italic sm:text-5xl">
-                {property.title}
-              </h1>
+            <h1 className="mt-2 font-display text-4xl text-acacia">
+              {property.title}
+            </h1>
 
-              <p className="mt-3 text-sm text-parchment/70">
-                {property.neighbourhood.name}
-              </p>
-            </div>
-
-            <div className="text-sm text-parchment/60">
-              Listed {formatDate(property.createdAt)}
-            </div>
+            <p className="mt-2 text-sm text-ink/55">
+              {property.neighbourhood.name}
+            </p>
           </div>
         </div>
-      </section>
-
-      <section className="mx-auto max-w-5xl px-6 py-10">
-        {saveMessage && (
-          <div className="mb-6 rounded-2xl border border-acacia/20 bg-acacia/10 p-5">
-            <p className="text-sm font-medium text-acacia">
-              {saveMessage}
-            </p>
-          </div>
-        )}
 
         {error && (
-          <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 p-5">
-            <p className="text-sm font-medium text-red-700">
-              {error}
-            </p>
+          <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {error}
           </div>
         )}
 
-        <div className="grid gap-6 lg:grid-cols-3">
-          <div className="space-y-6 lg:col-span-2">
+        {saveMessage && (
+          <div className="mb-6 rounded-xl border border-acacia/20 bg-acacia/5 px-4 py-3 text-sm text-acacia">
+            {saveMessage}
+          </div>
+        )}
+
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="space-y-6">
             {editing ? (
               <div className="rounded-2xl border border-line bg-white p-6 shadow-sm">
                 <p className="eyebrow">
-                  Edit property details
+                  Edit property
                 </p>
 
-                <div className="mt-5 space-y-5">
+                <h2 className="mt-2 font-display text-2xl text-acacia">
+                  Property details
+                </h2>
+
+                <div className="mt-6 space-y-5">
                   <div>
                     <label className="text-xs font-medium text-ink/60">
                       Property title
@@ -502,6 +554,7 @@ export default function ManageListingPage() {
                     </label>
 
                     <textarea
+                      rows={6}
                       value={form.description}
                       onChange={(e) =>
                         updateForm(
@@ -509,7 +562,6 @@ export default function ManageListingPage() {
                           e.target.value
                         )
                       }
-                      rows={5}
                       className="mt-2 w-full rounded-xl border border-line px-4 py-3 text-sm outline-none focus:border-acacia"
                     />
                   </div>
@@ -818,28 +870,47 @@ export default function ManageListingPage() {
                 </div>
               ) : (
                 <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
-                  {property.images.map((image, index) => (
-                    <div
-                      key={`${image.url}-${index}`}
-                      className="overflow-hidden rounded-xl border border-line bg-parchment"
-                    >
-                      <div className="relative aspect-square">
-                        <img
-                          src={image.url}
-                          alt={`${property.title} photo ${
-                            index + 1
-                          }`}
-                          className="h-full w-full object-cover"
-                        />
+                  {property.images.map(
+                    (image, index) => (
+                      <div
+                        key={image.id}
+                        className="overflow-hidden rounded-xl border border-line bg-parchment"
+                      >
+                        <div className="relative aspect-square">
+                          <img
+                            src={image.url}
+                            alt={`${property.title} photo ${
+                              index + 1
+                            }`}
+                            className="h-full w-full object-cover"
+                          />
 
-                        {index === 0 && (
-                          <span className="absolute bottom-2 left-2 rounded-full bg-acacia px-3 py-1 text-xs font-semibold text-parchment">
-                            Main photo
-                          </span>
-                        )}
+                          {index === 0 && (
+                            <span className="absolute bottom-2 left-2 rounded-full bg-acacia px-3 py-1 text-xs font-semibold text-parchment">
+                              Main photo
+                            </span>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              deleteImage(image.id)
+                            }
+                            disabled={
+                              deletingImageId ===
+                              image.id
+                            }
+                            className="absolute right-2 bottom-2 rounded-full bg-black/70 px-3 py-1 text-xs font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {deletingImageId ===
+                            image.id
+                              ? "Deleting..."
+                              : "Delete"}
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    )
+                  )}
                 </div>
               )}
 
@@ -857,8 +928,8 @@ export default function ManageListingPage() {
                   </span>
 
                   <span className="mt-2 text-xs text-ink/50">
-                    JPG, PNG or WebP · Maximum 5MB per image · Up to{" "}
-                    {MAX_IMAGES} images total
+                    JPG, PNG or WebP · Maximum 5MB per image
+                    · Up to {MAX_IMAGES} images total
                   </span>
 
                   <input
@@ -891,7 +962,9 @@ export default function ManageListingPage() {
                             <div className="relative aspect-square">
                               {previewUrls[index] && (
                                 <img
-                                  src={previewUrls[index]}
+                                  src={
+                                    previewUrls[index]
+                                  }
                                   alt={`Selected property photo ${
                                     index + 1
                                   }`}
@@ -969,11 +1042,13 @@ export default function ManageListingPage() {
                 )}
 
                 {property.availability !==
-                  "AVAILABLE" && (
+                  "AVAILABLE_NOW" && (
                   <button
                     type="button"
                     onClick={confirmAvailability}
-                    disabled={confirmingAvailability}
+                    disabled={
+                      confirmingAvailability
+                    }
                     className="w-full rounded-xl border border-acacia/30 bg-acacia/5 px-4 py-3 text-left text-sm font-semibold text-acacia hover:bg-acacia/10 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {confirmingAvailability
@@ -1030,7 +1105,9 @@ export default function ManageListingPage() {
               </p>
 
               <p className="mt-2 text-sm font-semibold text-ink">
-                {formatDate(property.lastVerifiedAt)}
+                {formatDate(
+                  property.lastVerifiedAt
+                )}
               </p>
             </div>
           </aside>

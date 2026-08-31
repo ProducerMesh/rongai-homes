@@ -1,11 +1,17 @@
 import { NextResponse } from "next/server";
+
 import { getServerSession } from "next-auth";
+
 import { authOptions } from "@/lib/auth";
+
 import { prisma } from "@/lib/prisma";
+
 import { supabaseServer } from "@/lib/supabase-server";
 
 const BUCKET_NAME = "property-images";
+
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
+
 const MAX_FILES = 10;
 
 export async function POST(request: Request) {
@@ -20,7 +26,9 @@ export async function POST(request: Request) {
     }
 
     const formData = await request.formData();
+
     const propertyId = formData.get("propertyId");
+
     const files = formData.getAll("files");
 
     if (typeof propertyId !== "string" || !propertyId) {
@@ -51,6 +59,11 @@ export async function POST(request: Request) {
         landlordId: true,
         caretakerId: true,
         agentId: true,
+        _count: {
+          select: {
+            images: true,
+          },
+        },
       },
     });
 
@@ -90,8 +103,27 @@ export async function POST(request: Request) {
 
     if (!ownsProperty) {
       return NextResponse.json(
-        { error: "You are not authorized to upload images for this property." },
+        {
+          error:
+            "You are not authorized to upload images for this property.",
+        },
         { status: 403 }
+      );
+    }
+
+    const existingImageCount = property._count.images;
+
+    if (existingImageCount + files.length > MAX_FILES) {
+      const remainingSlots = MAX_FILES - existingImageCount;
+
+      return NextResponse.json(
+        {
+          error:
+            remainingSlots > 0
+              ? `This listing already has ${existingImageCount} images. You can add only ${remainingSlots} more.`
+              : `This listing already has the maximum of ${MAX_FILES} images.`,
+        },
+        { status: 400 }
       );
     }
 
@@ -121,30 +153,41 @@ export async function POST(request: Request) {
         );
       }
 
-      const extension = file.name.split(".").pop()?.toLowerCase() || "jpg";
+      const extension =
+        file.name.split(".").pop()?.toLowerCase() || "jpg";
+
       const filePath = `${propertyId}/${crypto.randomUUID()}.${extension}`;
 
       const buffer = Buffer.from(await file.arrayBuffer());
 
-      const { error: uploadError } = await supabaseServer.storage
-        .from(BUCKET_NAME)
-        .upload(filePath, buffer, {
-          contentType: file.type,
-          upsert: false,
-        });
+      const { error: uploadError } =
+        await supabaseServer.storage
+          .from(BUCKET_NAME)
+          .upload(filePath, buffer, {
+            contentType: file.type,
+            upsert: false,
+          });
 
       if (uploadError) {
-        console.error("SUPABASE_IMAGE_UPLOAD_ERROR", uploadError);
+        console.error(
+          "SUPABASE_IMAGE_UPLOAD_ERROR",
+          uploadError
+        );
 
         return NextResponse.json(
-          { error: "Unable to upload one or more property images." },
+          {
+            error:
+              "Unable to upload one or more property images.",
+          },
           { status: 500 }
         );
       }
 
       const {
         data: { publicUrl },
-      } = supabaseServer.storage.from(BUCKET_NAME).getPublicUrl(filePath);
+      } = supabaseServer.storage
+        .from(BUCKET_NAME)
+        .getPublicUrl(filePath);
 
       const image = await prisma.propertyImage.create({
         data: {
@@ -166,10 +209,16 @@ export async function POST(request: Request) {
       { status: 201 }
     );
   } catch (error) {
-    console.error("PROPERTY_IMAGE_UPLOAD_ERROR", error);
+    console.error(
+      "PROPERTY_IMAGE_UPLOAD_ERROR",
+      error
+    );
 
     return NextResponse.json(
-      { error: "Something went wrong while uploading property images." },
+      {
+        error:
+          "Something went wrong while uploading property images.",
+      },
       { status: 500 }
     );
   }
