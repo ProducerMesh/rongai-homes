@@ -37,6 +37,12 @@ export default async function PropertyPage({
     property.intent === "RENT_HOME" ||
     property.intent === "RENT_COMMERCIAL";
 
+  const whatsappMessage = `Hello Rongai Homes, I'm interested in "${property.title}". Property ID: ${property.id}. I would like to arrange a viewing and confirm availability.`;
+
+  const whatsappUrl = `https://wa.me/254764028988?text=${encodeURIComponent(
+    whatsappMessage
+  )}`;
+
   return (
     <main className="min-h-screen bg-parchment">
       <section className="bg-acacia py-8 text-parchment">
@@ -53,10 +59,10 @@ export default async function PropertyPage({
       <section className="mx-auto max-w-6xl px-6 py-10">
         <div className="grid gap-8 lg:grid-cols-3">
           <div className="lg:col-span-2">
-<PropertyGallery
-  title={property.title}
-  images={property.images}
-/>
+            <PropertyGallery
+              title={property.title}
+              images={property.images}
+            />
 
             <div className="mt-8">
               <div className="flex flex-wrap items-center gap-2">
@@ -126,21 +132,23 @@ export default async function PropertyPage({
             </p>
 
             <p className="mt-2 text-sm leading-6 text-ink/60">
-              Contact the property representative to arrange a viewing and
-              confirm availability.
+              Contact Rongai Homes to arrange a viewing and confirm
+              availability. We will connect you with the person managing the
+              property.
             </p>
 
             <a
-              href="https://wa.me/254700000000"
+              href={whatsappUrl}
               target="_blank"
               rel="noreferrer"
               className="mt-6 block rounded-xl bg-ochre px-5 py-3 text-center text-sm font-semibold text-acacia-dark transition hover:bg-ochre-dark"
             >
-              Message on WhatsApp
+              Contact Rongai Homes on WhatsApp
             </a>
 
             <p className="mt-4 text-center text-xs text-ink/40">
-              Always verify the property before making any payment.
+              Your enquiry goes through Rongai Homes. Always verify the
+              property before making any payment.
             </p>
           </aside>
         </div>

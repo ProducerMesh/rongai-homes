@@ -99,6 +99,21 @@ enum ListingStatus {
   SUSPENDED
 }
 
+enum LeadChannel {
+  WHATSAPP
+  WEBSITE
+  PHONE
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  ASSIGNED
+  VIEWING_SCHEDULED
+  COMPLETED
+  CLOSED
+}
+
 // ---------- CORE USERS ----------
 
 model User {
@@ -116,17 +131,23 @@ model User {
   accounts Account[]
   sessions Session[]
 
-  profile        UserProfile?
-  landlordOf     Property[]        @relation("PropertyLandlord")
-  agentProfile   AgentProfile?
-  caretakerOf    Property[]        @relation("PropertyCaretaker")
+  profile UserProfile?
+
+  landlordOf  Property[]    @relation("PropertyLandlord")
+  agentProfile AgentProfile?
+  caretakerOf Property[]    @relation("PropertyCaretaker")
+
   savedProperties SavedProperty[]
-  searchAlerts   SearchAlert[]
+  searchAlerts    SearchAlert[]
   viewingRequests ViewingRequest[]
-  notifications  Notification[]
-  reportsFiled   Report[]          @relation("ReportedBy")
+  notifications   Notification[]
+
+  reportsFiled   Report[] @relation("ReportedBy")
   reviewsWritten Review[]
   auditLogs      AuditLog[]
+
+  leadsAsSeeker Lead[] @relation("LeadSeeker")
+  leadsAssigned Lead[] @relation("LeadAssignedTo")
 
   @@map("users")
 }
@@ -137,13 +158,14 @@ model Account {
   type              String
   provider          String
   providerAccountId String
-  refresh_token     String? @db.Text
-  access_token      String? @db.Text
-  expires_at        Int?
-  token_type        String?
-  scope             String?
-  id_token          String? @db.Text
-  session_state     String?
+
+  refresh_token String? @db.Text
+  access_token  String? @db.Text
+  expires_at    Int?
+  token_type    String?
+  scope         String?
+  id_token      String? @db.Text
+  session_state String?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -156,7 +178,8 @@ model Session {
   sessionToken String   @unique
   userId       String
   expires      DateTime
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("sessions")
 }
@@ -171,16 +194,16 @@ model VerificationToken {
 }
 
 model UserProfile {
-  id               String    @id @default(uuid())
-  userId           String    @unique
+  id               String        @id @default(uuid())
+  userId           String        @unique
   preferredArea    String?
-  budgetMin         Int?
-  budgetMax         Int?
-  preferredType     PropertyType?
-  bedrooms          Int?
-  moveInDate        DateTime?
-  notifyByEmail     Boolean   @default(true)
-  notifyInApp       Boolean   @default(true)
+  budgetMin        Int?
+  budgetMax        Int?
+  preferredType    PropertyType?
+  bedrooms         Int?
+  moveInDate       DateTime?
+  notifyByEmail    Boolean       @default(true)
+  notifyInApp      Boolean       @default(true)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -188,15 +211,15 @@ model UserProfile {
 }
 
 model AgentProfile {
-  id            String   @id @default(uuid())
-  userId        String   @unique
-  agencyName    String?
-  bio           String?
-  subscriptionTier String @default("FREE")
-  createdAt     DateTime @default(now())
+  id               String   @id @default(uuid())
+  userId           String   @unique
+  agencyName       String?
+  bio              String?
+  subscriptionTier String   @default("FREE")
+  createdAt        DateTime @default(now())
 
-  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  properties Property[]   @relation("PropertyAgent")
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  properties Property[] @relation("PropertyAgent")
 
   @@map("agent_profiles")
 }
@@ -218,8 +241,6 @@ model Neighbourhood {
   @@map("neighbourhoods")
 }
 
-// ---------- PROPERTIES ----------
-
 model Building {
   id              String   @id @default(uuid())
   name            String
@@ -236,59 +257,62 @@ model Building {
   @@map("buildings")
 }
 
-model Property {
-  id             String         @id @default(uuid())
-  title          String
-  description    String?        @db.Text
-  intent         PropertyIntent
-  propertyType   PropertyType
-  rentAmount     Int?
-  saleAmount     Int?
-  depositAmount  Int?
-  bedrooms       Int?
-  bathrooms      Int?
+// ---------- PROPERTIES ----------
 
+model Property {
+  id              String         @id @default(uuid())
+  title           String
+  description     String?        @db.Text
+  intent          PropertyIntent
+  propertyType    PropertyType
+  rentAmount      Int?
+  saleAmount      Int?
+  depositAmount   Int?
+  bedrooms        Int?
+  bathrooms       Int?
   neighbourhoodId String
-  buildingId       String?
-  unitLabel        String? // e.g. "A02" when part of a building
-  latitude         Float?
-  longitude        Float?
-  approximateOnly  Boolean  @default(false)
+  buildingId      String?
+  unitLabel       String?
+  latitude        Float?
+  longitude       Float?
+  approximateOnly Boolean        @default(false)
 
   landlordId  String?
   caretakerId String?
   agentId     String?
 
-  listingStatus  ListingStatus       @default(PENDING_APPROVAL)
-  availability   AvailabilityStatus  @default(NOT_CONFIRMED)
+  listingStatus  ListingStatus      @default(PENDING_APPROVAL)
+  availability   AvailabilityStatus @default(NOT_CONFIRMED)
   lastVerifiedAt DateTime?
-  verification   VerificationLevel   @default(BASIC)
+  verification   VerificationLevel  @default(BASIC)
 
-  // land / commercial specific fields (nullable, only used per property type)
-  acreage           Float?
-  titleDeedStatus   String?
-  roadAccess        String?
-  zoning            String?
+  acreage         Float?
+  titleDeedStatus String?
+  roadAccess      String?
+  zoning          String?
 
-  isFeatured Boolean  @default(false)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  isFeatured Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   neighbourhood Neighbourhood @relation(fields: [neighbourhoodId], references: [id])
   building      Building?     @relation(fields: [buildingId], references: [id])
-  landlord      User?         @relation("PropertyLandlord", fields: [landlordId], references: [id])
-  caretaker     User?         @relation("PropertyCaretaker", fields: [caretakerId], references: [id])
-  agent         AgentProfile? @relation("PropertyAgent", fields: [agentId], references: [id])
 
-  images             PropertyImage[]
-  amenities          PropertyAmenity[]
-  availabilityRecords AvailabilityRecord[]
-  verificationRecords VerificationRecord[]
-  viewingRequests     ViewingRequest[]
-  savedBy             SavedProperty[]
-  reports             Report[]
-  reviews             Review[]
-  featuredListings    FeaturedListing[]
+  landlord  User?         @relation("PropertyLandlord", fields: [landlordId], references: [id])
+  caretaker User?         @relation("PropertyCaretaker", fields: [caretakerId], references: [id])
+  agent     AgentProfile? @relation("PropertyAgent", fields: [agentId], references: [id])
+
+  images               PropertyImage[]
+  amenities            PropertyAmenity[]
+  availabilityRecords  AvailabilityRecord[]
+  verificationRecords  VerificationRecord[]
+  viewingRequests      ViewingRequest[]
+  savedBy              SavedProperty[]
+  reports              Report[]
+  reviews              Review[]
+  featuredListings     FeaturedListing[]
+  leads                Lead[]
 
   @@index([neighbourhoodId])
   @@index([availability])
@@ -309,8 +333,8 @@ model PropertyImage {
 }
 
 model Amenity {
-  id   String @id @default(uuid())
-  key  String @unique // e.g. "parking", "borehole", "cctv"
+  id    String @id @default(uuid())
+  key   String @unique
   label String
 
   properties PropertyAmenity[]
@@ -332,11 +356,11 @@ model PropertyAmenity {
 // ---------- AVAILABILITY & VERIFICATION ----------
 
 model AvailabilityRecord {
-  id         String             @id @default(uuid())
-  propertyId String
-  status     AvailabilityStatus
-  confirmedBy String? // userId of landlord/caretaker who confirmed
-  createdAt  DateTime           @default(now())
+  id          String             @id @default(uuid())
+  propertyId  String
+  status      AvailabilityStatus
+  confirmedBy String?
+  createdAt   DateTime           @default(now())
 
   property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
 
@@ -348,7 +372,7 @@ model VerificationRecord {
   propertyId String
   level      VerificationLevel
   notes      String?
-  verifiedBy String? // admin userId
+  verifiedBy String?
   createdAt  DateTime          @default(now())
 
   property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
@@ -357,6 +381,33 @@ model VerificationRecord {
 }
 
 // ---------- TENANT INTERACTIONS ----------
+
+model Lead {
+  id           String      @id @default(uuid())
+  propertyId   String
+  seekerId     String?
+  assignedToId String?
+
+  channel LeadChannel @default(WHATSAPP)
+  status  LeadStatus  @default(NEW)
+
+  contactName  String?
+  contactPhone String?
+  message      String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  seeker     User?    @relation("LeadSeeker", fields: [seekerId], references: [id], onDelete: SetNull)
+  assignedTo User?    @relation("LeadAssignedTo", fields: [assignedToId], references: [id], onDelete: SetNull)
+
+  @@index([propertyId])
+  @@index([seekerId])
+  @@index([assignedToId])
+  @@index([status])
+  @@map("leads")
+}
 
 model ViewingRequest {
   id            String        @id @default(uuid())
@@ -388,15 +439,15 @@ model SavedProperty {
 }
 
 model SearchAlert {
-  id              String   @id @default(uuid())
+  id              String        @id @default(uuid())
   userId          String
   neighbourhoodId String?
   propertyType    PropertyType?
   budgetMin       Int?
   budgetMax       Int?
   bedrooms        Int?
-  isActive        Boolean  @default(true)
-  createdAt       DateTime @default(now())
+  isActive        Boolean       @default(true)
+  createdAt       DateTime      @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -419,13 +470,13 @@ model Notification {
 // ---------- TRUST & SAFETY ----------
 
 model Report {
-  id          String       @id @default(uuid())
-  propertyId  String
+  id           String       @id @default(uuid())
+  propertyId   String
   reportedById String
-  reason      ReportReason
-  details     String?
-  status      ReportStatus @default(OPEN)
-  createdAt   DateTime     @default(now())
+  reason       ReportReason
+  details      String?
+  status       ReportStatus @default(OPEN)
+  createdAt    DateTime     @default(now())
 
   property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   reportedBy User     @relation("ReportedBy", fields: [reportedById], references: [id])
@@ -434,16 +485,16 @@ model Report {
 }
 
 model Review {
-  id          String   @id @default(uuid())
-  propertyId  String
-  authorId    String
-  accuracy    Int // 1-5
-  responsiveness Int // 1-5
-  condition   Int // 1-5
-  viewingExperience Int // 1-5
-  comment     String?
-  isModerated Boolean  @default(false)
-  createdAt   DateTime @default(now())
+  id                String   @id @default(uuid())
+  propertyId        String
+  authorId          String
+  accuracy          Int
+  responsiveness    Int
+  condition         Int
+  viewingExperience Int
+  comment           String?
+  isModerated       Boolean  @default(false)
+  createdAt         DateTime @default(now())
 
   property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   author   User     @relation(fields: [authorId], references: [id], onDelete: Cascade)

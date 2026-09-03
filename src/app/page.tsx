@@ -22,7 +22,7 @@ const INTENTS = [
 const STEPS = [
   { n: "Search", d: "Tell us the area, house type and budget." },
   { n: "Verify", d: "See real-time availability, not stale listings." },
-  { n: "Visit", d: "Message the caretaker directly on WhatsApp." },
+  { n: "Connect", d: "Contact Rongai Homes on WhatsApp and we will connect you with the person managing the property." },
   { n: "Move in", d: "Confirm the unit and settle in." },
 ];
 
