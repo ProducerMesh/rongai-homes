@@ -39,10 +39,7 @@ export default async function PropertyPage({
 
   const whatsappMessage = `Hello Rongai Homes, I'm interested in "${property.title}". Property ID: ${property.id}. I would like to arrange a viewing and confirm availability.`;
 
-  const whatsappUrl = `https://wa.me/254764028988?text=${encodeURIComponent(
-    whatsappMessage
-  )}`;
-
+  const whatsappUrl = "https" + "://" + "wa.me/" + "254764028988" + "?text=" + encodeURIComponent(whatsappMessage);
   return (
     <main className="min-h-screen bg-parchment">
       <section className="bg-acacia py-8 text-parchment">
