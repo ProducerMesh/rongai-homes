@@ -23,38 +23,184 @@ type Property = {
   }[];
 };
 
+type LeadStatus =
+  | "NEW"
+  | "CONTACTED"
+  | "ASSIGNED"
+  | "VIEWING_SCHEDULED"
+  | "COMPLETED"
+  | "CLOSED";
+
+type Lead = {
+  id: string;
+  propertyId: string;
+  channel: string;
+  status: LeadStatus;
+  contactName: string | null;
+  contactPhone: string | null;
+  message: string | null;
+  createdAt: string;
+  updatedAt: string;
+  property: {
+    id: string;
+    title: string;
+    neighbourhood: {
+      name: string;
+    };
+  };
+};
+
+const leadStatuses: { value: LeadStatus; label: string }[] = [
+  { value: "NEW", label: "New" },
+  { value: "CONTACTED", label: "Contacted" },
+  { value: "ASSIGNED", label: "Assigned" },
+  { value: "VIEWING_SCHEDULED", label: "Viewing scheduled" },
+  { value: "COMPLETED", label: "Completed" },
+  { value: "CLOSED", label: "Closed" },
+];
+
+function formatDate(date: string) {
+  return new Date(date).toLocaleString("en-KE", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+}
+
+function statusClasses(status: string) {
+  switch (status) {
+    case "NEW":
+      return "bg-pulse-soft text-acacia";
+    case "CONTACTED":
+      return "bg-ochre/15 text-acacia";
+    case "ASSIGNED":
+      return "bg-acacia/10 text-acacia";
+    case "VIEWING_SCHEDULED":
+      return "bg-clay/10 text-clay";
+    case "COMPLETED":
+      return "bg-pulse/15 text-acacia";
+    case "CLOSED":
+      return "bg-ink/10 text-ink/60";
+    default:
+      return "bg-ink/10 text-ink/60";
+  }
+}
+
 export default function DashboardPage() {
   const { data: session, status } = useSession();
 
   const [properties, setProperties] = useState<Property[]>([]);
+  const [leads, setLeads] = useState<Lead[]>([]);
+
   const [loading, setLoading] = useState(true);
+  const [leadsLoading, setLeadsLoading] = useState(true);
+
   const [error, setError] = useState("");
+  const [leadsError, setLeadsError] = useState("");
+
+  const [updatingLeadId, setUpdatingLeadId] = useState<string | null>(null);
+  const [updateMessage, setUpdateMessage] = useState<Record<string, string>>(
+    {}
+  );
 
   useEffect(() => {
     if (status !== "authenticated") {
       return;
     }
 
-    async function loadListings() {
+    async function loadDashboard() {
       try {
-        const response = await fetch("/api/my-listings");
-        const data = await response.json();
+        const [listingsResponse, leadsResponse] = await Promise.all([
+          fetch("/api/my-listings"),
+          fetch("/api/my-leads"),
+        ]);
 
-        if (!response.ok) {
-          setError(data.error || "Unable to load your listings.");
-          return;
+        const listingsData = await listingsResponse.json();
+        const leadsData = await leadsResponse.json();
+
+        if (!listingsResponse.ok) {
+          setError(listingsData.error || "Unable to load your listings.");
+        } else {
+          setProperties(listingsData.properties || []);
         }
 
-        setProperties(data.properties || []);
+        if (!leadsResponse.ok) {
+          setLeadsError(leadsData.error || "Unable to load your enquiries.");
+        } else {
+          setLeads(leadsData.leads || []);
+        }
       } catch {
-        setError("Unable to load your listings.");
+        setError("Unable to load your dashboard.");
+        setLeadsError("Unable to load your enquiries.");
       } finally {
         setLoading(false);
+        setLeadsLoading(false);
       }
     }
 
-    loadListings();
+    loadDashboard();
   }, [status]);
+
+  async function updateLeadStatus(leadId: string, newStatus: LeadStatus) {
+    setUpdatingLeadId(leadId);
+
+    setUpdateMessage((current) => ({
+      ...current,
+      [leadId]: "",
+    }));
+
+    try {
+      const response = await fetch(`/api/my-leads/${leadId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          status: newStatus,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setUpdateMessage((current) => ({
+          ...current,
+          [leadId]: data.error || "Unable to update status.",
+        }));
+        return;
+      }
+
+      setLeads((current) =>
+        current.map((lead) =>
+          lead.id === leadId
+            ? {
+                ...lead,
+                status: data.lead.status,
+                updatedAt: data.lead.updatedAt,
+              }
+            : lead
+        )
+      );
+
+      setUpdateMessage((current) => ({
+        ...current,
+        [leadId]: "Status updated.",
+      }));
+
+      window.setTimeout(() => {
+        setUpdateMessage((current) => ({
+          ...current,
+          [leadId]: "",
+        }));
+      }, 2500);
+    } catch {
+      setUpdateMessage((current) => ({
+        ...current,
+        [leadId]: "Unable to update status.",
+      }));
+    } finally {
+      setUpdatingLeadId(null);
+    }
+  }
 
   if (status === "loading") {
     return (
@@ -106,6 +252,8 @@ export default function DashboardPage() {
     );
   }
 
+  const newLeads = leads.filter((lead) => lead.status === "NEW").length;
+
   return (
     <main className="min-h-screen bg-parchment">
       <section className="bg-acacia py-12 text-parchment">
@@ -119,14 +267,17 @@ export default function DashboardPage() {
 
           <div className="mt-6 flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
             <div>
-              <p className="eyebrow text-parchment/60">Landlord dashboard</p>
+              <p className="eyebrow text-parchment/60">
+                Landlord dashboard
+              </p>
 
               <h1 className="mt-2 font-display text-4xl italic sm:text-5xl">
-                My listings
+                My dashboard
               </h1>
 
               <p className="mt-3 max-w-xl text-parchment/75">
-                Manage your properties and keep their availability up to date.
+                Manage your properties and stay on top of enquiries from
+                prospective tenants and buyers.
               </p>
             </div>
 
@@ -141,98 +292,316 @@ export default function DashboardPage() {
       </section>
 
       <section className="mx-auto max-w-5xl px-6 py-10">
-        {loading && (
-          <div className="rounded-2xl border border-line bg-white p-8 text-center">
-            <p className="text-sm text-ink/50">Loading your listings...</p>
-          </div>
-        )}
-
-        {error && (
-          <div className="rounded-2xl border border-red-200 bg-red-50 p-5">
-            <p className="text-sm font-medium text-red-700">{error}</p>
-          </div>
-        )}
-
-        {!loading && !error && properties.length === 0 && (
-          <div className="rounded-2xl border border-line bg-white p-10 text-center shadow-sm">
-            <h2 className="font-display text-2xl text-acacia">
-              No listings yet
-            </h2>
-
-            <p className="mt-3 text-sm leading-6 text-ink/60">
-              You haven't listed a property yet.
+        <div className="mb-10 grid gap-4 sm:grid-cols-3">
+          <div className="rounded-2xl border border-line bg-white p-6 shadow-sm">
+            <p className="text-xs font-medium uppercase tracking-wide text-ink/40">
+              My properties
             </p>
 
-            <Link
-              href="/list-property"
-              className="mt-6 inline-block rounded-xl bg-ochre px-6 py-3 text-sm font-semibold text-acacia-dark"
-            >
-              List your first property
-            </Link>
+            <p className="mt-2 font-display text-3xl text-acacia">
+              {properties.length}
+            </p>
           </div>
-        )}
 
-        <div className="space-y-5">
-          {properties.map((property) => (
-            <article
-              key={property.id}
-              className="overflow-hidden rounded-2xl border border-line bg-white shadow-sm"
-            >
-              <div className="p-6">
-                <div className="flex flex-col justify-between gap-5 sm:flex-row">
-                  <div>
-                    <p className="text-xs font-medium uppercase tracking-wide text-ink/40">
-                      {property.neighbourhood.name}
-                    </p>
+          <div className="rounded-2xl border border-line bg-white p-6 shadow-sm">
+            <p className="text-xs font-medium uppercase tracking-wide text-ink/40">
+              Total enquiries
+            </p>
 
-                    <h2 className="mt-2 font-display text-2xl text-acacia">
-                      {property.title}
-                    </h2>
+            <p className="mt-2 font-display text-3xl text-acacia">
+              {leads.length}
+            </p>
+          </div>
 
-                    <p className="mt-2 text-sm text-ink/60">
-                      {property.propertyType.replaceAll("_", " ")}
-                    </p>
-                  </div>
+          <div className="rounded-2xl border border-line bg-white p-6 shadow-sm">
+            <p className="text-xs font-medium uppercase tracking-wide text-ink/40">
+              New enquiries
+            </p>
 
-                  <div className="text-left sm:text-right">
-                    <span className="inline-flex rounded-full bg-ochre/15 px-3 py-1 text-xs font-semibold text-acacia">
-                      {property.listingStatus.replaceAll("_", " ")}
+            <p className="mt-2 font-display text-3xl text-acacia">
+              {newLeads}
+            </p>
+          </div>
+        </div>
+
+        <section>
+          <div className="mb-5 flex items-end justify-between gap-4">
+            <div>
+              <p className="eyebrow text-ink/40">Lead management</p>
+
+              <h2 className="mt-2 font-display text-3xl italic text-acacia">
+                Enquiries
+              </h2>
+
+              <p className="mt-2 text-sm leading-6 text-ink/60">
+                People who have contacted Rongai Homes about your properties.
+              </p>
+            </div>
+          </div>
+
+          {leadsLoading && (
+            <div className="rounded-2xl border border-line bg-white p-8 text-center shadow-sm">
+              <p className="text-sm text-ink/50">
+                Loading your enquiries...
+              </p>
+            </div>
+          )}
+
+          {leadsError && (
+            <div className="rounded-2xl border border-red-200 bg-red-50 p-5">
+              <p className="text-sm font-medium text-red-700">
+                {leadsError}
+              </p>
+            </div>
+          )}
+
+          {!leadsLoading && !leadsError && leads.length === 0 && (
+            <div className="rounded-2xl border border-line bg-white p-10 text-center shadow-sm">
+              <h3 className="font-display text-2xl text-acacia">
+                No enquiries yet
+              </h3>
+
+              <p className="mt-3 text-sm leading-6 text-ink/60">
+                When someone contacts Rongai Homes about one of your
+                properties, their enquiry will appear here.
+              </p>
+            </div>
+          )}
+
+          {!leadsLoading && !leadsError && leads.length > 0 && (
+            <div className="space-y-5">
+              {leads.map((lead) => (
+                <article
+                  key={lead.id}
+                  className="rounded-2xl border border-line bg-white p-6 shadow-sm"
+                >
+                  <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
+                    <div>
+                      <p className="text-xs font-medium uppercase tracking-wide text-ink/40">
+                        {lead.property.neighbourhood.name}
+                      </p>
+
+                      <h3 className="mt-2 font-display text-2xl text-acacia">
+                        {lead.property.title}
+                      </h3>
+
+                      <p className="mt-2 text-xs text-ink/45">
+                        Received {formatDate(lead.createdAt)}
+                      </p>
+                    </div>
+
+                    <span
+                      className={`inline-flex w-fit rounded-full px-3 py-1 text-xs font-semibold ${statusClasses(
+                        lead.status
+                      )}`}
+                    >
+                      {lead.status.replaceAll("_", " ")}
                     </span>
+                  </div>
 
-                    <p className="mt-2 text-xs text-ink/45">
-                      {property.availability.replaceAll("_", " ")}
-                    </p>
+                  <div className="mt-5 grid gap-4 border-t border-line pt-5 sm:grid-cols-2">
+                    <div>
+                      <p className="text-xs text-ink/40">Channel</p>
+
+                      <p className="mt-1 text-sm font-semibold text-ink">
+                        {lead.channel}
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="text-xs text-ink/40">Enquirer</p>
+
+                      <p className="mt-1 text-sm font-semibold text-ink">
+                        {lead.contactName || "WhatsApp visitor"}
+                      </p>
+                    </div>
+                  </div>
+
+                  {lead.message && (
+                    <div className="mt-5 rounded-xl bg-parchment p-4">
+                      <p className="text-xs font-medium uppercase tracking-wide text-ink/40">
+                        Enquiry message
+                      </p>
+
+                      <p className="mt-2 text-sm leading-6 text-ink/70">
+                        {lead.message}
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="mt-5 grid gap-4 border-t border-line pt-5 sm:grid-cols-2">
+                    <div>
+                      <label
+                        htmlFor={`lead-status-${lead.id}`}
+                        className="text-xs font-medium uppercase tracking-wide text-ink/40"
+                      >
+                        Update status
+                      </label>
+
+                      <select
+                        id={`lead-status-${lead.id}`}
+                        value={lead.status}
+                        disabled={updatingLeadId === lead.id}
+                        onChange={(event) =>
+                          updateLeadStatus(
+                            lead.id,
+                            event.target.value as LeadStatus
+                          )
+                        }
+                        className="mt-2 w-full rounded-xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink outline-none transition focus:border-acacia focus:ring-2 focus:ring-acacia/10 disabled:cursor-wait disabled:opacity-60"
+                      >
+                        {leadStatuses.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+
+                      {updatingLeadId === lead.id && (
+                        <p className="mt-2 text-xs text-ink/45">
+                          Saving status...
+                        </p>
+                      )}
+
+                      {updateMessage[lead.id] && (
+                        <p
+                          className={`mt-2 text-xs font-medium ${
+                            updateMessage[lead.id] === "Status updated."
+                              ? "text-acacia"
+                              : "text-red-600"
+                          }`}
+                        >
+                          {updateMessage[lead.id]}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="mt-5 flex flex-col gap-3 border-t border-line pt-5 sm:flex-row">
+                    <Link
+                      href={`/property/${lead.property.id}`}
+                      className="flex-1 rounded-xl border border-line px-4 py-3 text-center text-sm font-semibold text-acacia transition hover:border-acacia/40 hover:bg-parchment"
+                    >
+                      View property
+                    </Link>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section className="mt-14">
+          <div className="mb-5">
+            <p className="eyebrow text-ink/40">Property management</p>
+
+            <h2 className="mt-2 font-display text-3xl italic text-acacia">
+              My listings
+            </h2>
+
+            <p className="mt-2 text-sm leading-6 text-ink/60">
+              Manage your properties and keep their availability up to date.
+            </p>
+          </div>
+
+          {loading && (
+            <div className="rounded-2xl border border-line bg-white p-8 text-center">
+              <p className="text-sm text-ink/50">
+                Loading your listings...
+              </p>
+            </div>
+          )}
+
+          {error && (
+            <div className="rounded-2xl border border-red-200 bg-red-50 p-5">
+              <p className="text-sm font-medium text-red-700">{error}</p>
+            </div>
+          )}
+
+          {!loading && !error && properties.length === 0 && (
+            <div className="rounded-2xl border border-line bg-white p-10 text-center shadow-sm">
+              <h2 className="font-display text-2xl text-acacia">
+                No listings yet
+              </h2>
+
+              <p className="mt-3 text-sm leading-6 text-ink/60">
+                You haven't listed a property yet.
+              </p>
+
+              <Link
+                href="/list-property"
+                className="mt-6 inline-block rounded-xl bg-ochre px-6 py-3 text-sm font-semibold text-acacia-dark"
+              >
+                List your first property
+              </Link>
+            </div>
+          )}
+
+          <div className="space-y-5">
+            {properties.map((property) => (
+              <article
+                key={property.id}
+                className="overflow-hidden rounded-2xl border border-line bg-white shadow-sm"
+              >
+                <div className="p-6">
+                  <div className="flex flex-col justify-between gap-5 sm:flex-row">
+                    <div>
+                      <p className="text-xs font-medium uppercase tracking-wide text-ink/40">
+                        {property.neighbourhood.name}
+                      </p>
+
+                      <h2 className="mt-2 font-display text-2xl text-acacia">
+                        {property.title}
+                      </h2>
+
+                      <p className="mt-2 text-sm text-ink/60">
+                        {property.propertyType.replaceAll("_", " ")}
+                      </p>
+                    </div>
+
+                    <div className="text-left sm:text-right">
+                      <span className="inline-flex rounded-full bg-ochre/15 px-3 py-1 text-xs font-semibold text-acacia">
+                        {property.listingStatus.replaceAll("_", " ")}
+                      </span>
+
+                      <p className="mt-2 text-xs text-ink/45">
+                        {property.availability.replaceAll("_", " ")}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-6 grid gap-4 border-t border-line pt-5 sm:grid-cols-3">
+                    <div>
+                      <p className="text-xs text-ink/40">Rent</p>
+
+                      <p className="mt-1 text-sm font-semibold text-ink">
+                        {property.rentAmount
+                          ? `KSh ${property.rentAmount.toLocaleString()} / month`
+                          : "—"}
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="text-xs text-ink/40">Sale price</p>
+
+                      <p className="mt-1 text-sm font-semibold text-ink">
+                        {property.saleAmount
+                          ? `KSh ${property.saleAmount.toLocaleString()}`
+                          : "—"}
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="text-xs text-ink/40">Verification</p>
+
+                      <p className="mt-1 text-sm font-semibold text-ink">
+                        {property.verification}
+                      </p>
+                    </div>
                   </div>
                 </div>
 
-                <div className="mt-6 grid gap-4 border-t border-line pt-5 sm:grid-cols-3">
-                  <div>
-                    <p className="text-xs text-ink/40">Rent</p>
-                    <p className="mt-1 text-sm font-semibold text-ink">
-                      {property.rentAmount
-                        ? `KSh ${property.rentAmount.toLocaleString()} / month`
-                        : "—"}
-                    </p>
-                  </div>
-
-                  <div>
-                    <p className="text-xs text-ink/40">Sale price</p>
-                    <p className="mt-1 text-sm font-semibold text-ink">
-                      {property.saleAmount
-                        ? `KSh ${property.saleAmount.toLocaleString()}`
-                        : "—"}
-                    </p>
-                  </div>
-
-                  <div>
-                    <p className="text-xs text-ink/40">Verification</p>
-                    <p className="mt-1 text-sm font-semibold text-ink">
-                      {property.verification}
-                    </p>
-                  </div>
-                </div>
-              </div>
-                <div className="mt-6 flex flex-col gap-3 border-t border-line pt-5 sm:flex-row">
+                <div className="mt-6 flex flex-col gap-3 border-t border-line px-6 pb-6 pt-5 sm:flex-row">
                   <Link
                     href={`/property/${property.id}`}
                     className="flex-1 rounded-xl border border-line px-4 py-3 text-center text-sm font-semibold text-acacia transition hover:border-acacia/40 hover:bg-parchment"
@@ -247,9 +616,10 @@ export default function DashboardPage() {
                     Manage listing
                   </Link>
                 </div>
-            </article>
-          ))}
-        </div>
+              </article>
+            ))}
+          </div>
+        </section>
       </section>
     </main>
   );
