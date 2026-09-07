@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import PropertyGallery from "./PropertyGallery";
+import ContactWhatsAppButton from "./ContactWhatsAppButton";
 
 function formatKsh(amount: number | null) {
   if (amount === null) return "Price on request";
@@ -134,14 +135,11 @@ export default async function PropertyPage({
               property.
             </p>
 
-            <a
-              href={whatsappUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="mt-6 block rounded-xl bg-ochre px-5 py-3 text-center text-sm font-semibold text-acacia-dark transition hover:bg-ochre-dark"
-            >
-              Contact Rongai Homes on WhatsApp
-            </a>
+            <ContactWhatsAppButton
+              propertyId={property.id}
+              whatsappUrl={whatsappUrl}
+              message={whatsappMessage}
+            />
 
             <p className="mt-4 text-center text-xs text-ink/40">
               Your enquiry goes through Rongai Homes. Always verify the
