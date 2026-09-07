@@ -17,6 +17,62 @@ const statusSchema = z.object({
 
 export const dynamic = "force-dynamic";
 
+export async function GET(
+  request: Request,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const session = await getServerSession(authOptions);
+
+    if (!session?.user?.id) {
+      return NextResponse.json(
+        { error: "You must be signed in." },
+        { status: 401 }
+      );
+    }
+
+    const lead = await prisma.lead.findFirst({
+      where: {
+        id: params.id,
+        property: {
+          landlordId: session.user.id,
+        },
+      },
+      include: {
+        property: {
+          select: {
+            id: true,
+            title: true,
+            neighbourhood: {
+              select: {
+                name: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!lead) {
+      return NextResponse.json(
+        { error: "Lead not found." },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({
+      lead,
+    });
+  } catch (error) {
+    console.error("MY_LEAD_ERROR", error);
+
+    return NextResponse.json(
+      { error: "Unable to load the enquiry." },
+      { status: 500 }
+    );
+  }
+}
+
 export async function PATCH(
   request: Request,
   { params }: { params: { id: string } }
