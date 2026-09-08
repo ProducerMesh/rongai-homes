@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
+import { useParams } from "next/navigation";
 
 type LeadStatus =
   | "NEW"
@@ -12,16 +13,27 @@ type LeadStatus =
   | "COMPLETED"
   | "CLOSED";
 
+type Assignee = {
+  id: string;
+  name: string | null;
+  phone: string | null;
+  role: "AGENT" | "CARETAKER";
+  agentProfile: {
+    agencyName: string | null;
+  } | null;
+};
+
 type Lead = {
   id: string;
-  propertyId: string;
-  channel: string;
+  channel: "WHATSAPP" | "WEBSITE" | "PHONE";
   status: LeadStatus;
   contactName: string | null;
   contactPhone: string | null;
   message: string | null;
   createdAt: string;
   updatedAt: string;
+  assignedToId: string | null;
+  assignedTo: Assignee | null;
   property: {
     id: string;
     title: string;
@@ -31,7 +43,7 @@ type Lead = {
   };
 };
 
-const leadStatuses: { value: LeadStatus; label: string }[] = [
+const statusOptions: { value: LeadStatus; label: string }[] = [
   { value: "NEW", label: "New" },
   { value: "CONTACTED", label: "Contacted" },
   { value: "ASSIGNED", label: "Assigned" },
@@ -40,6 +52,12 @@ const leadStatuses: { value: LeadStatus; label: string }[] = [
   { value: "CLOSED", label: "Closed" },
 ];
 
+function statusLabel(status: LeadStatus) {
+  return (
+    statusOptions.find((option) => option.value === status)?.label ?? status
+  );
+}
+
 function formatDate(date: string) {
   return new Date(date).toLocaleString("en-KE", {
     dateStyle: "medium",
@@ -47,69 +65,91 @@ function formatDate(date: string) {
   });
 }
 
-function statusClasses(status: string) {
-  switch (status) {
-    case "NEW":
-      return "bg-pulse-soft text-acacia";
-    case "CONTACTED":
-      return "bg-ochre/15 text-acacia";
-    case "ASSIGNED":
-      return "bg-acacia/10 text-acacia";
-    case "VIEWING_SCHEDULED":
-      return "bg-clay/10 text-clay";
-    case "COMPLETED":
-      return "bg-pulse/15 text-acacia";
-    case "CLOSED":
-      return "bg-ink/10 text-ink/60";
-    default:
-      return "bg-ink/10 text-ink/60";
-  }
-}
-
-export default function LeadDetailsPage({
-  params,
-}: {
-  params: { id: string };
-}) {
-  const { data: session, status } = useSession();
+export default function LeadDetailsPage() {
+  const { data: session, status: sessionStatus } = useSession();
+  const params = useParams<{ id: string }>();
 
   const [lead, setLead] = useState<Lead | null>(null);
+  const [assignees, setAssignees] = useState<Assignee[]>([]);
+  const [selectedAssignee, setSelectedAssignee] = useState("");
+  const [selectedStatus, setSelectedStatus] = useState<LeadStatus>("NEW");
+
   const [loading, setLoading] = useState(true);
+  const [assigneesLoading, setAssigneesLoading] = useState(true);
+  const [savingStatus, setSavingStatus] = useState(false);
+  const [savingAssignment, setSavingAssignment] = useState(false);
+
   const [error, setError] = useState("");
-  const [updating, setUpdating] = useState(false);
-  const [updateMessage, setUpdateMessage] = useState("");
+  const [assignmentMessage, setAssignmentMessage] = useState("");
+  const [statusMessage, setStatusMessage] = useState("");
 
   useEffect(() => {
-    if (status !== "authenticated") {
+    if (sessionStatus !== "authenticated" || !params.id) {
       return;
     }
 
     async function loadLead() {
+      setLoading(true);
+      setError("");
+
       try {
-        const response = await fetch(`/api/my-leads/${params.id}`);
+        const response = await fetch(`/api/my-leads/${params.id}`, {
+          cache: "no-store",
+        });
+
         const data = await response.json();
 
         if (!response.ok) {
-          setError(data.error || "Unable to load the enquiry.");
-          return;
+          throw new Error(data.error || "Unable to load the enquiry.");
         }
 
         setLead(data.lead);
-      } catch {
-        setError("Unable to load the enquiry.");
+        setSelectedStatus(data.lead.status);
+        setSelectedAssignee(data.lead.assignedToId ?? "");
+      } catch (err) {
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Unable to load the enquiry."
+        );
       } finally {
         setLoading(false);
       }
     }
 
+    async function loadAssignees() {
+      setAssigneesLoading(true);
+
+      try {
+        const response = await fetch("/api/my-leads/assignees", {
+          cache: "no-store",
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || "Unable to load assignees.");
+        }
+
+        setAssignees(data.assignees ?? []);
+      } catch (err) {
+        console.error("LEAD_ASSIGNEES_LOAD_ERROR", err);
+      } finally {
+        setAssigneesLoading(false);
+      }
+    }
+
     loadLead();
-  }, [params.id, status]);
+    loadAssignees();
+  }, [sessionStatus, params.id]);
 
-  async function updateLeadStatus(newStatus: LeadStatus) {
-    if (!lead) return;
+  async function updateStatus() {
+    if (!lead) {
+      return;
+    }
 
-    setUpdating(true);
-    setUpdateMessage("");
+    setSavingStatus(true);
+    setStatusMessage("");
 
     try {
       const response = await fetch(`/api/my-leads/${lead.id}`, {
@@ -118,15 +158,14 @@ export default function LeadDetailsPage({
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          status: newStatus,
+          status: selectedStatus,
         }),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        setUpdateMessage(data.error || "Unable to update status.");
-        return;
+        throw new Error(data.error || "Unable to update the enquiry.");
       }
 
       setLead((current) =>
@@ -139,98 +178,113 @@ export default function LeadDetailsPage({
           : current
       );
 
-      setUpdateMessage("Status updated.");
-
-      window.setTimeout(() => {
-        setUpdateMessage("");
-      }, 2500);
-    } catch {
-      setUpdateMessage("Unable to update status.");
+      setStatusMessage("Status updated.");
+    } catch (err) {
+      setStatusMessage(
+        err instanceof Error
+          ? err.message
+          : "Unable to update the enquiry."
+      );
     } finally {
-      setUpdating(false);
+      setSavingStatus(false);
     }
   }
 
-  if (status === "loading" || loading) {
+  async function updateAssignment() {
+    if (!lead) {
+      return;
+    }
+
+    setSavingAssignment(true);
+    setAssignmentMessage("");
+
+    try {
+      const response = await fetch(`/api/my-leads/${lead.id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          assignedToId: selectedAssignee || null,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Unable to assign the enquiry.");
+      }
+
+      setLead((current) =>
+        current
+          ? {
+              ...current,
+              assignedToId: data.lead.assignedToId,
+              assignedTo: data.lead.assignedTo,
+              updatedAt: data.lead.updatedAt,
+            }
+          : current
+      );
+
+      setAssignmentMessage(
+        selectedAssignee
+          ? "Enquiry assigned successfully."
+          : "Assignment removed."
+      );
+    } catch (err) {
+      setAssignmentMessage(
+        err instanceof Error
+          ? err.message
+          : "Unable to assign the enquiry."
+      );
+    } finally {
+      setSavingAssignment(false);
+    }
+  }
+
+  if (sessionStatus === "loading" || loading) {
     return (
-      <main className="min-h-screen bg-parchment">
-        <div className="mx-auto max-w-4xl px-6 py-20 text-center">
-          <p className="text-sm text-ink/50">Loading enquiry...</p>
+      <main className="min-h-screen bg-parchment px-4 py-10">
+        <div className="mx-auto max-w-4xl">
+          <p className="text-sm text-ink/60">Loading enquiry...</p>
         </div>
       </main>
     );
   }
 
-  if (!session?.user) {
+  if (!session) {
     return (
-      <main className="min-h-screen bg-parchment">
-        <section className="bg-acacia py-12 text-parchment">
-          <div className="mx-auto max-w-4xl px-6">
-            <Link
-              href="/"
-              className="text-sm text-parchment/70 hover:text-parchment"
-            >
-              ← Rongai Homes
-            </Link>
-            <h1 className="mt-6 font-display text-4xl italic">
-              Lead details
-            </h1>
-          </div>
-        </section>
-
-        <section className="mx-auto max-w-md px-6 py-16 text-center">
-          <div className="rounded-2xl border border-line bg-white p-8 shadow-sm">
-            <h2 className="font-display text-2xl text-acacia">
-              Sign in to continue
-            </h2>
-            <p className="mt-3 text-sm leading-6 text-ink/60">
-              Sign in to view enquiries connected to your properties.
-            </p>
-            <Link
-              href={`/auth/sign-in?callbackUrl=/dashboard/leads/${params.id}`}
-              className="mt-6 block rounded-xl bg-ochre px-6 py-3 text-sm font-semibold text-acacia-dark hover:bg-ochre-dark"
-            >
-              Sign in
-            </Link>
-          </div>
-        </section>
+      <main className="min-h-screen bg-parchment px-4 py-10">
+        <div className="mx-auto max-w-4xl rounded-2xl border border-line bg-white p-8">
+          <h1 className="text-2xl font-bold text-ink">
+            Sign in required
+          </h1>
+          <p className="mt-2 text-sm text-ink/70">
+            Please sign in to view this enquiry.
+          </p>
+        </div>
       </main>
     );
   }
 
   if (error || !lead) {
     return (
-      <main className="min-h-screen bg-parchment">
-        <section className="bg-acacia py-12 text-parchment">
-          <div className="mx-auto max-w-4xl px-6">
-            <Link
-              href="/dashboard"
-              className="text-sm text-parchment/70 hover:text-parchment"
-            >
-              ← Back to dashboard
-            </Link>
-            <h1 className="mt-6 font-display text-4xl italic">
-              Lead details
-            </h1>
-          </div>
-        </section>
+      <main className="min-h-screen bg-parchment px-4 py-10">
+        <div className="mx-auto max-w-4xl rounded-2xl border border-line bg-white p-8">
+          <h1 className="text-2xl font-bold text-ink">
+            Unable to load enquiry
+          </h1>
+          <p className="mt-2 text-sm text-ink/70">
+            {error || "The enquiry could not be found."}
+          </p>
 
-        <section className="mx-auto max-w-md px-6 py-16">
-          <div className="rounded-2xl border border-red-200 bg-red-50 p-8 text-center">
-            <h2 className="font-display text-2xl text-red-800">
-              Enquiry unavailable
-            </h2>
-            <p className="mt-3 text-sm leading-6 text-red-700">
-              {error || "The enquiry could not be found."}
-            </p>
-            <Link
-              href="/dashboard"
-              className="mt-6 inline-block rounded-xl bg-acacia px-6 py-3 text-sm font-semibold text-parchment"
-            >
-              Back to dashboard
-            </Link>
-          </div>
-        </section>
+          <Link
+            href="/dashboard"
+            className="mt-6 inline-block rounded-xl bg-acacia px-5 py-3 text-sm font-semibold text-white"
+          >
+            Back to dashboard
+          </Link>
+        </div>
       </main>
     );
   }
@@ -240,176 +294,239 @@ export default function LeadDetailsPage({
     : null;
 
   return (
-    <main className="min-h-screen bg-parchment">
-      <section className="bg-acacia py-10 text-parchment">
-        <div className="mx-auto max-w-4xl px-6">
-          <Link
-            href="/dashboard"
-            className="text-sm text-parchment/70 hover:text-parchment"
-          >
-            ← Back to dashboard
-          </Link>
+    <main className="min-h-screen bg-parchment px-4 py-8">
+      <div className="mx-auto max-w-4xl">
+        <Link
+          href="/dashboard"
+          className="text-sm font-semibold text-acacia hover:underline"
+        >
+          ← Back to dashboard
+        </Link>
 
-          <p className="mt-6 eyebrow text-parchment/60">Lead management</p>
+        <div className="mt-6 rounded-2xl border border-line bg-white p-6 shadow-sm sm:p-8">
+          <div className="flex flex-col gap-4 border-b border-line pb-6 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-sm font-medium text-ink/60">
+                Enquiry for
+              </p>
 
-          <h1 className="mt-2 font-display text-4xl italic sm:text-5xl">
-            Enquiry details
-          </h1>
+              <h1 className="mt-1 text-2xl font-bold text-ink">
+                {lead.property.title}
+              </h1>
 
-          <p className="mt-3 text-parchment/70">
-            {lead.property.neighbourhood.name} · {lead.property.title}
-          </p>
-        </div>
-      </section>
-
-      <section className="mx-auto max-w-4xl px-6 py-10">
-        <div className="space-y-6">
-          <article className="rounded-2xl border border-line bg-white p-6 shadow-sm">
-            <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-ink/40">
-                  Property
-                </p>
-
-                <h2 className="mt-2 font-display text-3xl text-acacia">
-                  {lead.property.title}
-                </h2>
-
-                <p className="mt-2 text-sm text-ink/60">
-                  {lead.property.neighbourhood.name}, Ongata Rongai
-                </p>
-              </div>
-
-              <span
-                className={`inline-flex w-fit rounded-full px-3 py-1 text-xs font-semibold ${statusClasses(
-                  lead.status
-                )}`}
-              >
-                {lead.status.replaceAll("_", " ")}
-              </span>
+              <p className="mt-1 text-sm text-ink/60">
+                {lead.property.neighbourhood.name}
+              </p>
             </div>
 
-            <div className="mt-6 flex flex-col gap-3 border-t border-line pt-5 sm:flex-row">
-              <Link
-                href={`/property/${lead.property.id}`}
-                className="flex-1 rounded-xl border border-line px-4 py-3 text-center text-sm font-semibold text-acacia transition hover:border-acacia/40 hover:bg-parchment"
-              >
-                View property
-              </Link>
-            </div>
-          </article>
+            <span className="inline-flex w-fit rounded-full bg-ochre/20 px-3 py-1 text-xs font-semibold text-ink">
+              {statusLabel(lead.status)}
+            </span>
+          </div>
 
-          <article className="rounded-2xl border border-line bg-white p-6 shadow-sm">
-            <p className="eyebrow text-ink/40">Enquirer</p>
+          <div className="mt-6 grid gap-6 md:grid-cols-2">
+            <section>
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-ink/50">
+                Enquirer
+              </h2>
 
-            <h2 className="mt-2 font-display text-3xl text-acacia">
-              {lead.contactName || "WhatsApp visitor"}
-            </h2>
+              <div className="mt-3 space-y-2 text-sm text-ink">
+                <p>
+                  <span className="font-semibold">Name:</span>{" "}
+                  {lead.contactName || "Not provided"}
+                </p>
 
-            <div className="mt-6 grid gap-5 border-t border-line pt-5 sm:grid-cols-2">
-              <div>
-                <p className="text-xs text-ink/40">Phone</p>
-                <p className="mt-1 text-sm font-semibold text-ink">
+                <p>
+                  <span className="font-semibold">Phone:</span>{" "}
                   {lead.contactPhone || "Not provided"}
                 </p>
-              </div>
 
-              <div>
-                <p className="text-xs text-ink/40">Channel</p>
-                <p className="mt-1 text-sm font-semibold text-ink">
+                <p>
+                  <span className="font-semibold">Channel:</span>{" "}
                   {lead.channel}
                 </p>
               </div>
-            </div>
 
-            {whatsappUrl && (
-              <a
-                href={whatsappUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="mt-6 block rounded-xl bg-ochre px-5 py-3 text-center text-sm font-semibold text-acacia-dark transition hover:bg-ochre-dark"
-              >
-                Contact via WhatsApp
-              </a>
-            )}
-          </article>
+              {whatsappUrl && (
+                <a
+                  href={whatsappUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-4 inline-block rounded-xl bg-acacia px-4 py-3 text-sm font-semibold text-white transition hover:bg-acacia-light"
+                >
+                  Contact via WhatsApp
+                </a>
+              )}
+            </section>
 
-          <article className="rounded-2xl border border-line bg-white p-6 shadow-sm">
-            <p className="eyebrow text-ink/40">Enquiry</p>
+            <section>
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-ink/50">
+                Enquiry details
+              </h2>
 
-            <div className="mt-5 rounded-xl bg-parchment p-5">
-              <p className="text-xs font-medium uppercase tracking-wide text-ink/40">
-                Message
-              </p>
-
-              <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-ink/70">
-                {lead.message || "No message was provided."}
-              </p>
-            </div>
-
-            <div className="mt-6 grid gap-5 border-t border-line pt-5 sm:grid-cols-2">
-              <div>
-                <p className="text-xs text-ink/40">Received</p>
-                <p className="mt-1 text-sm font-semibold text-ink">
+              <div className="mt-3 space-y-2 text-sm text-ink">
+                <p>
+                  <span className="font-semibold">Received:</span>{" "}
                   {formatDate(lead.createdAt)}
                 </p>
+
+                <p>
+                  <span className="font-semibold">Last updated:</span>{" "}
+                  {formatDate(lead.updatedAt)}
+                </p>
+
+                <p>
+                  <span className="font-semibold">Property:</span>{" "}
+                  <Link
+                    href={`/property/${lead.property.id}`}
+                    className="text-acacia hover:underline"
+                  >
+                    View property
+                  </Link>
+                </p>
+              </div>
+            </section>
+          </div>
+
+          <section className="mt-8 border-t border-line pt-6">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-ink/50">
+              Message
+            </h2>
+
+            <div className="mt-3 rounded-xl bg-parchment p-4 text-sm leading-6 text-ink">
+              {lead.message || "No message was provided."}
+            </div>
+          </section>
+
+          <section className="mt-8 border-t border-line pt-6">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-ink/50">
+              Manage enquiry
+            </h2>
+
+            <div className="mt-4 grid gap-6 md:grid-cols-2">
+              <div>
+                <label
+                  htmlFor="lead-status"
+                  className="block text-sm font-semibold text-ink"
+                >
+                  Status
+                </label>
+
+                <select
+                  id="lead-status"
+                  value={selectedStatus}
+                  onChange={(event) =>
+                    setSelectedStatus(event.target.value as LeadStatus)
+                  }
+                  className="mt-2 w-full rounded-xl border border-line bg-white px-4 py-3 text-sm text-ink outline-none focus:border-ochre"
+                >
+                  {statusOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+
+                <button
+                  type="button"
+                  onClick={updateStatus}
+                  disabled={savingStatus}
+                  className="mt-3 rounded-xl bg-ochre px-5 py-3 text-sm font-semibold text-acacia-dark transition hover:bg-ochre-dark disabled:cursor-wait disabled:opacity-70"
+                >
+                  {savingStatus ? "Saving status..." : "Update status"}
+                </button>
+
+                {statusMessage && (
+                  <p className="mt-2 text-sm text-ink/60">
+                    {statusMessage}
+                  </p>
+                )}
               </div>
 
               <div>
-                <p className="text-xs text-ink/40">Last updated</p>
-                <p className="mt-1 text-sm font-semibold text-ink">
-                  {formatDate(lead.updatedAt)}
-                </p>
+                <label
+                  htmlFor="lead-assignee"
+                  className="block text-sm font-semibold text-ink"
+                >
+                  Assign to
+                </label>
+
+                <select
+                  id="lead-assignee"
+                  value={selectedAssignee}
+                  onChange={(event) =>
+                    setSelectedAssignee(event.target.value)
+                  }
+                  disabled={assigneesLoading}
+                  className="mt-2 w-full rounded-xl border border-line bg-white px-4 py-3 text-sm text-ink outline-none focus:border-ochre disabled:opacity-60"
+                >
+                  <option value="">
+                    {assigneesLoading
+                      ? "Loading assignees..."
+                      : "Unassigned"}
+                  </option>
+
+                  {assignees.map((assignee) => (
+                    <option key={assignee.id} value={assignee.id}>
+                      {assignee.name || "Unnamed user"} —{" "}
+                      {assignee.role === "AGENT"
+                        ? assignee.agentProfile?.agencyName || "Agent"
+                        : "Caretaker"}
+                    </option>
+                  ))}
+                </select>
+
+                <button
+                  type="button"
+                  onClick={updateAssignment}
+                  disabled={savingAssignment || assigneesLoading}
+                  className="mt-3 rounded-xl bg-acacia px-5 py-3 text-sm font-semibold text-white transition hover:bg-acacia-light disabled:cursor-wait disabled:opacity-70"
+                >
+                  {savingAssignment
+                    ? "Saving assignment..."
+                    : "Update assignment"}
+                </button>
+
+                {assignmentMessage && (
+                  <p className="mt-2 text-sm text-ink/60">
+                    {assignmentMessage}
+                  </p>
+                )}
               </div>
             </div>
-          </article>
 
-          <article className="rounded-2xl border border-line bg-white p-6 shadow-sm">
-            <p className="eyebrow text-ink/40">Follow-up</p>
-
-            <label
-              htmlFor="lead-status"
-              className="mt-3 block text-sm font-semibold text-acacia"
-            >
-              Enquiry status
-            </label>
-
-            <select
-              id="lead-status"
-              value={lead.status}
-              disabled={updating}
-              onChange={(event) =>
-                updateLeadStatus(event.target.value as LeadStatus)
-              }
-              className="mt-3 w-full rounded-xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink outline-none transition focus:border-acacia focus:ring-2 focus:ring-acacia/10 disabled:cursor-wait disabled:opacity-60"
-            >
-              {leadStatuses.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-
-            {updating && (
-              <p className="mt-2 text-xs text-ink/45">
-                Saving status...
+            <div className="mt-6 rounded-xl bg-parchment p-4">
+              <p className="text-sm font-semibold text-ink">
+                Current assignee
               </p>
-            )}
 
-            {updateMessage && (
-              <p
-                className={`mt-2 text-xs font-medium ${
-                  updateMessage === "Status updated."
-                    ? "text-acacia"
-                    : "text-red-600"
-                }`}
-              >
-                {updateMessage}
-              </p>
-            )}
-          </article>
+              {lead.assignedTo ? (
+                <div className="mt-2 text-sm text-ink/70">
+                  <p>
+                    {lead.assignedTo.name || "Unnamed user"} (
+                    {lead.assignedTo.role})
+                  </p>
+
+                  {lead.assignedTo.agentProfile?.agencyName && (
+                    <p>
+                      Agency:{" "}
+                      {lead.assignedTo.agentProfile.agencyName}
+                    </p>
+                  )}
+
+                  {lead.assignedTo.phone && (
+                    <p>Phone: {lead.assignedTo.phone}</p>
+                  )}
+                </div>
+              ) : (
+                <p className="mt-2 text-sm text-ink/60">
+                  This enquiry is currently unassigned.
+                </p>
+              )}
+            </div>
+          </section>
         </div>
-      </section>
+      </div>
     </main>
   );
 }

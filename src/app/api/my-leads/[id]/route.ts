@@ -4,16 +4,26 @@ import { z } from "zod";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
-const statusSchema = z.object({
-  status: z.enum([
-    "NEW",
-    "CONTACTED",
-    "ASSIGNED",
-    "VIEWING_SCHEDULED",
-    "COMPLETED",
-    "CLOSED",
-  ]),
-});
+const updateLeadSchema = z
+  .object({
+    status: z
+      .enum([
+        "NEW",
+        "CONTACTED",
+        "ASSIGNED",
+        "VIEWING_SCHEDULED",
+        "COMPLETED",
+        "CLOSED",
+      ])
+      .optional(),
+    assignedToId: z.string().uuid().nullable().optional(),
+  })
+  .refine(
+    (data) => data.status !== undefined || data.assignedToId !== undefined,
+    {
+      message: "Please provide a status or assignee.",
+    }
+  );
 
 export const dynamic = "force-dynamic";
 
@@ -46,6 +56,19 @@ export async function GET(
             neighbourhood: {
               select: {
                 name: true,
+              },
+            },
+          },
+        },
+        assignedTo: {
+          select: {
+            id: true,
+            name: true,
+            phone: true,
+            role: true,
+            agentProfile: {
+              select: {
+                agencyName: true,
               },
             },
           },
@@ -88,11 +111,11 @@ export async function PATCH(
     }
 
     const body = await request.json();
-    const result = statusSchema.safeParse(body);
+    const result = updateLeadSchema.safeParse(body);
 
     if (!result.success) {
       return NextResponse.json(
-        { error: "Please provide a valid lead status." },
+        { error: "Please provide a valid lead update." },
         { status: 400 }
       );
     }
@@ -116,17 +139,76 @@ export async function PATCH(
       );
     }
 
+    const data: {
+      status?: z.infer<typeof updateLeadSchema>["status"];
+      assignedToId?: string | null;
+    } = {};
+
+    if (result.data.status !== undefined) {
+      data.status = result.data.status;
+    }
+
+    if (result.data.assignedToId !== undefined) {
+      if (result.data.assignedToId === null) {
+        data.assignedToId = null;
+      } else {
+        const assignee = await prisma.user.findFirst({
+          where: {
+            id: result.data.assignedToId,
+            OR: [
+              {
+                role: "CARETAKER",
+              },
+              {
+                role: "AGENT",
+                agentProfile: {
+                  isNot: null,
+                },
+              },
+            ],
+          },
+          select: {
+            id: true,
+          },
+        });
+
+        if (!assignee) {
+          return NextResponse.json(
+            {
+              error:
+                "The selected person is not an eligible agent or caretaker.",
+            },
+            { status: 400 }
+          );
+        }
+
+        data.assignedToId = assignee.id;
+      }
+    }
+
     const updatedLead = await prisma.lead.update({
       where: {
         id: lead.id,
       },
-      data: {
-        status: result.data.status,
-      },
+      data,
       select: {
         id: true,
         status: true,
+        assignedToId: true,
         updatedAt: true,
+        assignedTo: {
+          select: {
+            id: true,
+            name: true,
+            phone: true,
+            role: true,
+            agentProfile: {
+              select: {
+                agencyName: true,
+              },
+            },
+          },
+        },
       },
     });
 
@@ -135,10 +217,10 @@ export async function PATCH(
       lead: updatedLead,
     });
   } catch (error) {
-    console.error("LEAD_STATUS_UPDATE_ERROR", error);
+    console.error("LEAD_UPDATE_ERROR", error);
 
     return NextResponse.json(
-      { error: "Unable to update the enquiry status." },
+      { error: "Unable to update the enquiry." },
       { status: 500 }
     );
   }
