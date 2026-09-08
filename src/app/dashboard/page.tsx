@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
+
 import { useEffect, useState } from "react";
+
 import { useSession } from "next-auth/react";
 
 type Property = {
@@ -50,6 +52,38 @@ type Lead = {
   };
 };
 
+type ViewingStatus =
+  | "PENDING"
+  | "ACCEPTED"
+  | "DECLINED"
+  | "RESCHEDULE_REQUESTED"
+  | "COMPLETED"
+  | "CANCELLED";
+
+type ViewingRequest = {
+  id: string;
+  propertyId: string;
+  tenantId: string;
+  preferredDate: string;
+  message: string | null;
+  status: ViewingStatus;
+  createdAt: string;
+  updatedAt: string;
+  property: {
+    id: string;
+    title: string;
+    neighbourhood: {
+      name: string;
+    };
+  };
+  tenant: {
+    id: string;
+    name: string | null;
+    email: string | null;
+    phone: string | null;
+  };
+};
+
 const leadStatuses: { value: LeadStatus; label: string }[] = [
   { value: "NEW", label: "New" },
   { value: "CONTACTED", label: "Contacted" },
@@ -85,22 +119,116 @@ function statusClasses(status: string) {
   }
 }
 
+function viewingStatusClasses(status: ViewingStatus) {
+  switch (status) {
+    case "PENDING":
+      return "bg-ochre/15 text-acacia";
+    case "ACCEPTED":
+      return "bg-acacia/10 text-acacia";
+    case "DECLINED":
+      return "bg-red-50 text-red-700";
+    case "RESCHEDULE_REQUESTED":
+      return "bg-clay/10 text-clay";
+    case "COMPLETED":
+      return "bg-pulse/15 text-acacia";
+    case "CANCELLED":
+      return "bg-ink/10 text-ink/60";
+    default:
+      return "bg-ink/10 text-ink/60";
+  }
+}
+
+function viewingStatusLabel(status: ViewingStatus) {
+  switch (status) {
+    case "PENDING":
+      return "Pending";
+    case "ACCEPTED":
+      return "Accepted";
+    case "DECLINED":
+      return "Declined";
+    case "RESCHEDULE_REQUESTED":
+      return "Reschedule requested";
+    case "COMPLETED":
+      return "Completed";
+    case "CANCELLED":
+      return "Cancelled";
+    default:
+      return "Unknown";
+  }
+}
+
 export default function DashboardPage() {
   const { data: session, status } = useSession();
 
   const [properties, setProperties] = useState<Property[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
+  const [viewingRequests, setViewingRequests] = useState<ViewingRequest[]>(
+    []
+  );
 
   const [loading, setLoading] = useState(true);
   const [leadsLoading, setLeadsLoading] = useState(true);
+  const [viewingsLoading, setViewingsLoading] = useState(true);
 
   const [error, setError] = useState("");
   const [leadsError, setLeadsError] = useState("");
+  const [viewingsError, setViewingsError] = useState("");
 
   const [updatingLeadId, setUpdatingLeadId] = useState<string | null>(null);
+  const [updatingViewingId, setUpdatingViewingId] = useState<string | null>(
+    null
+  );
+
   const [updateMessage, setUpdateMessage] = useState<Record<string, string>>(
     {}
   );
+
+  async function updateViewingRequestStatus(
+    requestId: string,
+    newStatus: ViewingStatus
+  ) {
+    setUpdatingViewingId(requestId);
+    setViewingsError("");
+
+    try {
+      const response = await fetch(
+        `/api/my-viewing-requests/${requestId}`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            status: newStatus,
+          }),
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.error || "Unable to update the viewing request."
+        );
+      }
+
+      setViewingRequests((currentRequests) =>
+        currentRequests.map((request) =>
+          request.id === requestId
+            ? { ...request, status: data.request.status }
+            : request
+        )
+      );
+    } catch (error) {
+      setViewingsError(
+        error instanceof Error
+          ? error.message
+          : "Unable to update the viewing request."
+      );
+    } finally {
+      setUpdatingViewingId(null);
+    }
+  }
 
   useEffect(() => {
     if (status !== "authenticated") {
@@ -109,13 +237,16 @@ export default function DashboardPage() {
 
     async function loadDashboard() {
       try {
-        const [listingsResponse, leadsResponse] = await Promise.all([
-          fetch("/api/my-listings"),
-          fetch("/api/my-leads"),
-        ]);
+        const [listingsResponse, leadsResponse, viewingsResponse] =
+          await Promise.all([
+            fetch("/api/my-listings"),
+            fetch("/api/my-leads"),
+            fetch("/api/my-viewing-requests"),
+          ]);
 
         const listingsData = await listingsResponse.json();
         const leadsData = await leadsResponse.json();
+        const viewingsData = await viewingsResponse.json();
 
         if (!listingsResponse.ok) {
           setError(listingsData.error || "Unable to load your listings.");
@@ -128,12 +259,22 @@ export default function DashboardPage() {
         } else {
           setLeads(leadsData.leads || []);
         }
+
+        if (!viewingsResponse.ok) {
+          setViewingsError(
+            viewingsData.error || "Unable to load viewing requests."
+          );
+        } else {
+          setViewingRequests(viewingsData.viewingRequests || []);
+        }
       } catch {
         setError("Unable to load your dashboard.");
         setLeadsError("Unable to load your enquiries.");
+        setViewingsError("Unable to load viewing requests.");
       } finally {
         setLoading(false);
         setLeadsLoading(false);
+        setViewingsLoading(false);
       }
     }
 
@@ -166,6 +307,7 @@ export default function DashboardPage() {
           ...current,
           [leadId]: data.error || "Unable to update status.",
         }));
+
         return;
       }
 
@@ -254,6 +396,10 @@ export default function DashboardPage() {
 
   const newLeads = leads.filter((lead) => lead.status === "NEW").length;
 
+  const pendingViewingRequests = viewingRequests.filter(
+    (request) => request.status === "PENDING"
+  ).length;
+
   return (
     <main className="min-h-screen bg-parchment">
       <section className="bg-acacia py-12 text-parchment">
@@ -292,7 +438,7 @@ export default function DashboardPage() {
       </section>
 
       <section className="mx-auto max-w-5xl px-6 py-10">
-        <div className="mb-10 grid gap-4 sm:grid-cols-3">
+        <div className="mb-10 grid gap-4 sm:grid-cols-4">
           <div className="rounded-2xl border border-line bg-white p-6 shadow-sm">
             <p className="text-xs font-medium uppercase tracking-wide text-ink/40">
               My properties
@@ -322,9 +468,266 @@ export default function DashboardPage() {
               {newLeads}
             </p>
           </div>
+
+          <div className="rounded-2xl border border-line bg-white p-6 shadow-sm">
+            <p className="text-xs font-medium uppercase tracking-wide text-ink/40">
+              Pending viewings
+            </p>
+
+            <p className="mt-2 font-display text-3xl text-acacia">
+              {pendingViewingRequests}
+            </p>
+          </div>
         </div>
 
         <section>
+          <div className="mb-5 flex items-end justify-between gap-4">
+            <div>
+              <p className="eyebrow text-ink/40">Viewing management</p>
+
+              <h2 className="mt-2 font-display text-3xl italic text-acacia">
+                Viewing requests
+              </h2>
+
+              <p className="mt-2 text-sm leading-6 text-ink/60">
+                Tenants who have requested to view one of your properties.
+              </p>
+            </div>
+          </div>
+
+          {viewingsLoading && (
+            <div className="rounded-2xl border border-line bg-white p-8 text-center shadow-sm">
+              <p className="text-sm text-ink/50">
+                Loading viewing requests...
+              </p>
+            </div>
+          )}
+
+          {viewingsError && (
+            <div className="rounded-2xl border border-red-200 bg-red-50 p-5">
+              <p className="text-sm font-medium text-red-700">
+                {viewingsError}
+              </p>
+            </div>
+          )}
+
+          {!viewingsLoading &&
+            !viewingsError &&
+            viewingRequests.length === 0 && (
+              <div className="rounded-2xl border border-line bg-white p-10 text-center shadow-sm">
+                <h3 className="font-display text-2xl text-acacia">
+                  No viewing requests yet
+                </h3>
+
+                <p className="mt-3 text-sm leading-6 text-ink/60">
+                  When a tenant requests to view one of your properties, the
+                  request will appear here.
+                </p>
+              </div>
+            )}
+
+          {!viewingsLoading &&
+            !viewingsError &&
+            viewingRequests.length > 0 && (
+              <div className="space-y-5">
+                {viewingRequests.map((request) => (
+                  <article
+                    key={request.id}
+                    className="rounded-2xl border border-line bg-white p-6 shadow-sm"
+                  >
+                    <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
+                      <div>
+                        <p className="text-xs font-medium uppercase tracking-wide text-ink/40">
+                          {request.property.neighbourhood.name}
+                        </p>
+
+                        <h3 className="mt-2 font-display text-2xl text-acacia">
+                          {request.property.title}
+                        </h3>
+
+                        <p className="mt-2 text-xs text-ink/45">
+                          Requested {formatDate(request.createdAt)}
+                        </p>
+                      </div>
+
+                      <span
+                        className={`inline-flex w-fit rounded-full px-3 py-1 text-xs font-semibold ${viewingStatusClasses(
+                          request.status
+                        )}`}
+                      >
+                        {viewingStatusLabel(request.status)}
+                      </span>
+                    </div>
+
+                    <div className="mt-5 grid gap-4 border-t border-line pt-5 sm:grid-cols-2">
+                      <div>
+                        <p className="text-xs text-ink/40">
+                          Preferred viewing
+                        </p>
+
+                        <p className="mt-1 text-sm font-semibold text-ink">
+                          {formatDate(request.preferredDate)}
+                        </p>
+                      </div>
+
+                      <div>
+                        <p className="text-xs text-ink/40">Tenant</p>
+
+                        <p className="mt-1 text-sm font-semibold text-ink">
+                          {request.tenant.name || "Rongai Homes tenant"}
+                        </p>
+
+                        {request.tenant.phone && (
+                          <p className="mt-1 text-xs text-ink/50">
+                            {request.tenant.phone}
+                          </p>
+                        )}
+
+                        {request.tenant.email && (
+                          <p className="mt-1 text-xs text-ink/50">
+                            {request.tenant.email}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {request.message && (
+                      <div className="mt-5 rounded-xl bg-parchment p-4">
+                        <p className="text-xs font-medium uppercase tracking-wide text-ink/40">
+                          Tenant message
+                        </p>
+
+                        <p className="mt-2 text-sm leading-6 text-ink/70">
+                          {request.message}
+                        </p>
+                      </div>
+                    )}
+
+                    <div className="mt-5 border-t border-line pt-5">
+                      <p className="mb-3 text-xs font-medium uppercase tracking-wide text-ink/40">
+                        Manage request
+                      </p>
+
+                      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+                        {(request.status === "PENDING" ||
+                          request.status === "RESCHEDULE_REQUESTED") && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                updateViewingRequestStatus(
+                                  request.id,
+                                  "ACCEPTED"
+                                )
+                              }
+                              disabled={updatingViewingId === request.id}
+                              className="flex-1 rounded-xl bg-acacia px-4 py-3 text-sm font-semibold text-white transition hover:bg-acacia-dark disabled:cursor-wait disabled:opacity-60"
+                            >
+                              {updatingViewingId === request.id
+                                ? "Updating..."
+                                : "Accept"}
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                updateViewingRequestStatus(
+                                  request.id,
+                                  "DECLINED"
+                                )
+                              }
+                              disabled={updatingViewingId === request.id}
+                              className="flex-1 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:cursor-wait disabled:opacity-60"
+                            >
+                              Decline
+                            </button>
+                          </>
+                        )}
+
+                        {(request.status === "PENDING" ||
+                          request.status === "ACCEPTED") && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              updateViewingRequestStatus(
+                                request.id,
+                                "RESCHEDULE_REQUESTED"
+                              )
+                            }
+                            disabled={updatingViewingId === request.id}
+                            className="flex-1 rounded-xl border border-line bg-white px-4 py-3 text-sm font-semibold text-acacia transition hover:bg-parchment disabled:cursor-wait disabled:opacity-60"
+                          >
+                            Request reschedule
+                          </button>
+                        )}
+
+                        {request.status === "ACCEPTED" && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              updateViewingRequestStatus(
+                                request.id,
+                                "COMPLETED"
+                              )
+                            }
+                            disabled={updatingViewingId === request.id}
+                            className="flex-1 rounded-xl border border-acacia/20 bg-acacia/5 px-4 py-3 text-sm font-semibold text-acacia transition hover:bg-acacia/10 disabled:cursor-wait disabled:opacity-60"
+                          >
+                            Mark completed
+                          </button>
+                        )}
+
+                        {request.status === "ACCEPTED" && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              updateViewingRequestStatus(
+                                request.id,
+                                "CANCELLED"
+                              )
+                            }
+                            disabled={updatingViewingId === request.id}
+                            className="flex-1 rounded-xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink/60 transition hover:bg-parchment disabled:cursor-wait disabled:opacity-60"
+                          >
+                            Cancel
+                          </button>
+                        )}
+                      </div>
+
+                      {request.status === "DECLINED" && (
+                        <p className="mt-3 text-xs text-ink/45">
+                          This viewing request has been declined.
+                        </p>
+                      )}
+
+                      {request.status === "COMPLETED" && (
+                        <p className="mt-3 text-xs text-ink/45">
+                          This viewing has been marked as completed.
+                        </p>
+                      )}
+
+                      {request.status === "CANCELLED" && (
+                        <p className="mt-3 text-xs text-ink/45">
+                          This viewing request has been cancelled.
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="mt-5 flex flex-col gap-3 border-t border-line pt-5 sm:flex-row">
+                      <Link
+                        href={`/property/${request.property.id}`}
+                        className="flex-1 rounded-xl border border-line px-4 py-3 text-center text-sm font-semibold text-acacia transition hover:border-acacia/40 hover:bg-parchment"
+                      >
+                        View property
+                      </Link>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+        </section>
+
+        <section className="mt-14">
           <div className="mb-5 flex items-end justify-between gap-4">
             <div>
               <p className="eyebrow text-ink/40">Lead management</p>
@@ -484,6 +887,7 @@ export default function DashboardPage() {
                     >
                       View enquiry
                     </Link>
+
                     <Link
                       href={`/property/${lead.property.id}`}
                       className="flex-1 rounded-xl border border-line px-4 py-3 text-center text-sm font-semibold text-acacia transition hover:border-acacia/40 hover:bg-parchment"

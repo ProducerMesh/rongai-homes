@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import PropertyGallery from "./PropertyGallery";
 import ContactWhatsAppButton from "./ContactWhatsAppButton";
+import RequestViewingButton from "./RequestViewingButton";
 
 function formatKsh(amount: number | null) {
   if (amount === null) return "Price on request";
@@ -140,6 +141,7 @@ export default async function PropertyPage({
               whatsappUrl={whatsappUrl}
               message={whatsappMessage}
             />
+            <RequestViewingButton propertyId={property.id} />
 
             <p className="mt-4 text-center text-xs text-ink/40">
               Your enquiry goes through Rongai Homes. Always verify the

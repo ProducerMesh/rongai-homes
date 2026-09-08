@@ -1,9 +1,17 @@
 "use client";
 
+import { Suspense } from "react";
+
 import { signIn } from "next-auth/react";
+
 import Link from "next/link";
 
-export default function SignInPage() {
+import { useSearchParams } from "next/navigation";
+
+function SignInForm() {
+  const searchParams = useSearchParams();
+  const callbackUrl = searchParams.get("callbackUrl") || "/";
+
   return (
     <main className="min-h-screen bg-parchment">
       <section className="mx-auto flex min-h-screen max-w-md items-center px-6 py-12">
@@ -17,11 +25,9 @@ export default function SignInPage() {
 
           <div className="mt-8">
             <p className="eyebrow">Rongai Homes</p>
-
             <h1 className="mt-2 font-display text-3xl italic text-acacia">
               Welcome back
             </h1>
-
             <p className="mt-2 text-sm leading-6 text-ink/60">
               Sign in to request viewings, save properties and manage your
               property activity.
@@ -29,7 +35,7 @@ export default function SignInPage() {
           </div>
 
           <button
-            onClick={() => signIn("google", { callbackUrl: "/" })}
+            onClick={() => signIn("google", { callbackUrl })}
             className="mt-8 w-full rounded-xl border border-line bg-white px-5 py-3 text-sm font-semibold text-ink transition hover:bg-parchment"
           >
             Continue with Google
@@ -44,7 +50,6 @@ export default function SignInPage() {
           <form
             onSubmit={(event) => {
               event.preventDefault();
-
               const form = new FormData(event.currentTarget);
               const phone = form.get("phone")?.toString();
 
@@ -53,7 +58,7 @@ export default function SignInPage() {
               signIn("phone-otp", {
                 phone,
                 otp: "000000",
-                callbackUrl: "/",
+                callbackUrl,
               });
             }}
           >
@@ -88,5 +93,23 @@ export default function SignInPage() {
         </div>
       </section>
     </main>
+  );
+}
+
+export default function SignInPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen bg-parchment">
+          <section className="mx-auto flex min-h-screen max-w-md items-center px-6 py-12">
+            <div className="w-full rounded-2xl border border-line bg-white p-8 shadow-sm">
+              <p className="text-sm text-ink/60">Loading sign-in...</p>
+            </div>
+          </section>
+        </main>
+      }
+    >
+      <SignInForm />
+    </Suspense>
   );
 }
