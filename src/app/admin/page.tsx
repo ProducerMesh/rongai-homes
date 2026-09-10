@@ -1,6 +1,9 @@
 import { getServerSession } from "next-auth";
+
 import { authOptions } from "@/lib/auth";
+
 import AdminModerationClient from "./AdminModerationClient";
+import AdminViewingRequestsClient from "./viewing-requests/AdminViewingRequestsClient";
 
 export default async function AdminPage() {
   const session = await getServerSession(authOptions);
@@ -35,6 +38,8 @@ export default async function AdminPage() {
         </p>
 
         <AdminModerationClient />
+
+        <AdminViewingRequestsClient />
       </div>
     </main>
   );
