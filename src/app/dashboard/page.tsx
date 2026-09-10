@@ -237,6 +237,23 @@ export default function DashboardPage() {
 
     async function loadDashboard() {
       try {
+        if (session?.user?.role === "TENANT") {
+          const viewingsResponse = await fetch(
+            "/api/my-viewing-requests/tenant"
+          );
+          const viewingsData = await viewingsResponse.json();
+
+          if (!viewingsResponse.ok) {
+            setViewingsError(
+              viewingsData.error || "Unable to load your viewing requests."
+            );
+          } else {
+            setViewingRequests(viewingsData.viewingRequests || []);
+          }
+
+          return;
+        }
+
         const [listingsResponse, leadsResponse, viewingsResponse] =
           await Promise.all([
             fetch("/api/my-listings"),
@@ -344,6 +361,49 @@ export default function DashboardPage() {
     }
   }
 
+  async function cancelTenantViewingRequest(requestId: string) {
+    if (!window.confirm("Cancel this viewing request?")) {
+      return;
+    }
+
+    setUpdatingViewingId(requestId);
+    setViewingsError("");
+
+    try {
+      const response = await fetch(
+        `/api/my-viewing-requests/tenant/${requestId}`,
+        {
+          method: "PATCH",
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setViewingsError(
+          data.error || "Unable to cancel the viewing request."
+        );
+        return;
+      }
+
+      setViewingRequests((current) =>
+        current.map((request) =>
+          request.id === requestId
+            ? {
+                ...request,
+                status: data.request.status,
+                updatedAt: data.request.updatedAt,
+              }
+            : request
+        )
+      );
+    } catch {
+      setViewingsError("Unable to cancel the viewing request.");
+    } finally {
+      setUpdatingViewingId(null);
+    }
+  }
+
   if (status === "loading") {
     return (
       <main className="min-h-screen bg-parchment">
@@ -389,6 +449,159 @@ export default function DashboardPage() {
               Sign in
             </Link>
           </div>
+        </section>
+      </main>
+    );
+  }
+
+  if (session.user.role === "TENANT") {
+    return (
+      <main className="min-h-screen bg-parchment">
+        <section className="bg-acacia py-12 text-parchment">
+          <div className="mx-auto max-w-5xl px-6">
+            <Link
+              href="/"
+              className="text-sm text-parchment/70 hover:text-parchment"
+            >
+              ← Rongai Homes
+            </Link>
+
+            <div className="mt-6">
+              <p className="eyebrow text-parchment/60">Tenant dashboard</p>
+
+              <h1 className="mt-2 font-display text-4xl italic sm:text-5xl">
+                My viewing requests
+              </h1>
+
+              <p className="mt-3 max-w-xl text-parchment/75">
+                Keep track of properties you have requested to view and the
+                response from the person managing each property.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section className="mx-auto max-w-5xl px-6 py-10">
+          {viewingsLoading ? (
+            <div className="rounded-2xl border border-line bg-white p-8 text-center shadow-sm">
+              <p className="text-sm text-ink/50">
+                Loading your viewing requests...
+              </p>
+            </div>
+          ) : viewingsError ? (
+            <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-sm text-red-700">
+              {viewingsError}
+            </div>
+          ) : viewingRequests.length === 0 ? (
+            <div className="rounded-2xl border border-line bg-white p-8 text-center shadow-sm">
+              <h2 className="font-display text-2xl text-acacia">
+                No viewing requests yet
+              </h2>
+
+              <p className="mt-3 text-sm leading-6 text-ink/60">
+                When you request a property viewing, it will appear here so
+                you can track its status.
+              </p>
+
+              <Link
+                href="/search"
+                className="mt-6 inline-block rounded-xl bg-ochre px-6 py-3 text-sm font-semibold text-acacia-dark hover:bg-ochre-dark"
+              >
+                Find a home
+              </Link>
+            </div>
+          ) : (
+            <div className="space-y-5">
+              {viewingRequests.map((request) => (
+                <article
+                  key={request.id}
+                  className="rounded-2xl border border-line bg-white p-6 shadow-sm"
+                >
+                  <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
+                    <div>
+                      <p className="text-xs font-medium uppercase tracking-wide text-ink/40">
+                        Viewing request
+                      </p>
+
+                      <h2 className="mt-2 font-display text-2xl text-acacia">
+                        {request.property.title}
+                      </h2>
+
+                      <p className="mt-1 text-sm text-ink/60">
+                        {request.property.neighbourhood.name}
+                      </p>
+                    </div>
+
+                    <span
+                      className={`inline-flex w-fit rounded-full px-3 py-1 text-xs font-semibold ${viewingStatusClasses(
+                        request.status
+                      )}`}
+                    >
+                      {viewingStatusLabel(request.status)}
+                    </span>
+                  </div>
+
+                  <div className="mt-6 grid gap-4 sm:grid-cols-2">
+                    <div className="rounded-xl bg-parchment p-4">
+                      <p className="text-xs font-medium uppercase tracking-wide text-ink/40">
+                        Preferred viewing
+                      </p>
+
+                      <p className="mt-1 text-sm font-semibold text-acacia">
+                        {formatDate(request.preferredDate)}
+                      </p>
+                    </div>
+
+                    <div className="rounded-xl bg-parchment p-4">
+                      <p className="text-xs font-medium uppercase tracking-wide text-ink/40">
+                        Request submitted
+                      </p>
+
+                      <p className="mt-1 text-sm font-semibold text-acacia">
+                        {formatDate(request.createdAt)}
+                      </p>
+                    </div>
+                  </div>
+
+                  {request.message && (
+                    <div className="mt-5">
+                      <p className="text-xs font-medium uppercase tracking-wide text-ink/40">
+                        Your message
+                      </p>
+
+                      <p className="mt-2 text-sm leading-6 text-ink/70">
+                        {request.message}
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="mt-6 flex flex-wrap gap-3">
+                    <Link
+                      href={`/property/${request.property.id}`}
+                      className="inline-flex rounded-xl border border-acacia px-5 py-3 text-sm font-semibold text-acacia hover:bg-acacia hover:text-parchment"
+                    >
+                      View property
+                    </Link>
+
+                    {["PENDING", "ACCEPTED", "RESCHEDULE_REQUESTED"].includes(
+                      request.status
+                    ) && (
+                      <button
+                        type="button"
+                        onClick={() => cancelTenantViewingRequest(request.id)}
+                        disabled={updatingViewingId === request.id}
+                        className="inline-flex rounded-xl border border-red-200 px-5 py-3 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {updatingViewingId === request.id
+                          ? "Cancelling..."
+                          : "Cancel viewing"}
+                      </button>
+                    )}
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
         </section>
       </main>
     );
