@@ -16,7 +16,11 @@ export default async function PropertyPage({
   params: { id: string };
 }) {
   const property = await prisma.property.findUnique({
-    where: { id: params.id },
+    where: {
+      id: params.id,
+      listingStatus: "ACTIVE",
+      availability: "AVAILABLE_NOW",
+    },
     include: {
       neighbourhood: true,
       images: {
